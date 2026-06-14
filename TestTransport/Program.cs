@@ -1,11 +1,14 @@
 using MassTransit;
+using MassTransit.Logging;
+using OpenTelemetry;
+using RedisTransport.Telemetry;
 using RedisTransport.Transport.Configuration;
 using TestTransport;
 using TestTransport.Consumers;
 
 var builder = Host.CreateApplicationBuilder(args);
 
-builder.AddRedisClient("Redis");
+builder.AddRedisClient("Redis", o => { o.DisableTracing = true; });
 
 if (builder.Configuration.GetValue<bool>("UseWorker"))
     builder.Services.AddHostedService<Worker>();
@@ -20,6 +23,12 @@ builder.Services.AddMassTransit(x =>
 
     x.UsingRedis((context, cfg) => { cfg.ConfigureEndpoints(context); });
 });
+
+builder.Services.AddOpenTelemetry()
+    .UseOtlpExporter()
+    .WithTracing(o =>
+        o.AddSource(DiagnosticHeaders.DefaultListenerName)
+            .AddSource(Otel.DefaultListenerName));
 
 var host = builder.Build();
 host.Run();

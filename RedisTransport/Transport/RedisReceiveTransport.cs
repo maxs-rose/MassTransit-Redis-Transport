@@ -1,6 +1,7 @@
 using MassTransit;
 using MassTransit.Middleware;
 using MassTransit.Transports;
+using RedisTransport.Telemetry;
 using RedisTransport.Transport.Configuration;
 using StackExchange.Redis;
 
@@ -17,6 +18,8 @@ internal sealed class RedisReceiveTransport(IRedisHostConfiguration hostConfigur
 
     public ReceiveTransportHandle Start()
     {
+        context.LogContext.Debug?.Log("Starting receive transport: {Address}", context.InputAddress);
+
         if (context is QueueRedisReceiveEndpointContext queueContext)
             foreach (var type in queueContext.SubscribedMessageTypes)
                 _subscribedTopics.Add(MessageTypeNameFormatter.Format(type));
@@ -67,6 +70,8 @@ internal sealed class RedisReceiveTransport(IRedisHostConfiguration hostConfigur
 
     private async Task RegisterAsync()
     {
+        using var _ = Otel.ActivitySource.StartActivity();
+
         try
         {
             var db = hostConfiguration.Multiplexer.GetDatabase();
@@ -119,6 +124,8 @@ internal sealed class RedisReceiveTransport(IRedisHostConfiguration hostConfigur
 
     private async Task RefreshLoop(CancellationToken ct)
     {
+        using var _ = Otel.ActivitySource.StartActivity();
+
         var ttl = settings.AutoDeleteOnIdle!.Value;
         var interval = TimeSpan.FromTicks(ttl.Ticks / 2);
         if (interval > MaxRefreshInterval)
@@ -144,6 +151,8 @@ internal sealed class RedisReceiveTransport(IRedisHostConfiguration hostConfigur
 
     private async Task NotifyReadyAsync(RedisMessageReceiver receiver)
     {
+        using var _t = Otel.ActivitySource.StartActivity();
+
         try
         {
             await receiver.Ready.ConfigureAwait(false);

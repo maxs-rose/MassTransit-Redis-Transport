@@ -1,5 +1,6 @@
 using MassTransit;
 using MassTransit.Transports;
+using RedisTransport.Telemetry;
 using RedisTransport.Transport.Configuration;
 using StackExchange.Redis;
 
@@ -62,6 +63,8 @@ internal sealed class RedisMessageReceiver : ConsumerAgent<string>
             while (!IsStopping)
                 try
                 {
+                    using var t = Otel.TraceActivitySource.StartActivity($"Poll: {_streamKey}");
+
                     await TrimExpiredMessages(db).ConfigureAwait(false);
 
                     var entries = await db.StreamReadGroupAsync(_streamKey, _consumerGroup, _consumerName, ">", _settings.PrefetchCount).ConfigureAwait(false);
