@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using MassTransit;
 using MassTransit.Transports;
+using MassTransit.Util;
 using RedisTransport.Configuration;
 using RedisTransport.Telemetry;
 using StackExchange.Redis;
@@ -19,7 +20,7 @@ internal sealed class RedisMessageReceiver : ConsumerAgent<string>
     private readonly RedisReceiveSettings _settings;
     private readonly string _streamKey;
     private readonly IReadOnlyList<string> _subscribedTopics;
-    private TaskCompletionSource<bool> _wakeup = new(TaskCreationOptions.RunContinuationsAsynchronously);
+    private CancellationTokenSource _notifyCts = new();
 
     public RedisMessageReceiver(
         RedisClientContext clientContext,
@@ -56,7 +57,7 @@ internal sealed class RedisMessageReceiver : ConsumerAgent<string>
             {
                 var channel = RedisChannel.Literal(_notifyChannel);
                 notifyQueue = await _clientContext.Subscriber.SubscribeAsync(channel).ConfigureAwait(false);
-                notifyQueue.OnMessage(_ => Volatile.Read(ref _wakeup).TrySetResult(true));
+                notifyQueue.OnMessage(_ => Interlocked.Exchange(ref _notifyCts, new CancellationTokenSource()).Cancel());
                 LogContext.Debug?.Log("Subscribed to notify channel {Channel}", _notifyChannel);
             }
             catch (Exception ex)
@@ -70,46 +71,17 @@ internal sealed class RedisMessageReceiver : ConsumerAgent<string>
 
             var db = _clientContext.Database;
 
+            using var algorithm = new RequestRateAlgorithm(new RequestRateAlgorithmOptions
+            {
+                PrefetchCount = _settings.PrefetchCount,
+                RequestResultLimit = _settings.PrefetchCount
+            });
+
             while (!IsStopping)
-                try
-                {
-                    using var t = Otel.TraceActivitySource.StartActivity(ActivityKind.Consumer);
-                    t?.SetTag("messaging.system", "redis");
-                    t?.SetTag("messaging.destination", _streamKey);
-
-                    await TrimExpiredMessages(db).ConfigureAwait(false);
-
-                    var entries = await db.StreamReadGroupAsync(
-                            _streamKey, _consumerGroup, _consumerName, ">", _settings.PrefetchCount)
-                        .ConfigureAwait(false);
-
-                    if (entries is { Length: > 0 })
-                    {
-                        t?.SetTag("messaging.batch.message_count", entries.Length);
-                        LogContext.Debug?.Log("Read {Count} message(s) from {Stream}", entries.Length, _streamKey);
-
-                        foreach (var entry in entries)
-                            await Dispatch(db, entry).ConfigureAwait(false);
-                        continue;
-                    }
-
-                    await WaitForNotificationOrTimeout().ConfigureAwait(false);
-                }
-                catch (OperationCanceledException) when (IsStopping)
-                {
-                    break;
-                }
-                catch (Exception ex)
-                {
-                    LogContext.Warning?.Log(ex, "Receive loop faulted on {Stream}; waiting before retry", _streamKey);
-                    try
-                    {
-                        await Task.Delay(_settings.PollingInterval, Stopping).ConfigureAwait(false);
-                    }
-                    catch
-                    {
-                    }
-                }
+                await algorithm.Run((limit, ct) => ReceiveMessages(db, limit, ct), (entry, _) => HandleMessage(db, entry), Stopping).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (IsStopping)
+        {
         }
         catch (Exception ex)
         {
@@ -118,13 +90,90 @@ internal sealed class RedisMessageReceiver : ConsumerAgent<string>
         finally
         {
             if (notifyQueue != null)
-                try
-                {
-                    await notifyQueue.UnsubscribeAsync().ConfigureAwait(false);
-                }
-                catch
-                {
-                }
+                await notifyQueue.UnsubscribeAsync().ConfigureAwait(false);
+        }
+    }
+
+    private async Task<IEnumerable<StreamEntry>> ReceiveMessages(IDatabase db, int limit, CancellationToken ct)
+    {
+        using var t = Otel.TraceActivitySource.StartActivity(ActivityKind.Consumer);
+        t?.SetTag("messaging.system", "redis");
+        t?.SetTag("messaging.destination", _streamKey);
+
+        await TrimExpiredMessages(db).ConfigureAwait(false);
+
+        var entries = await db.StreamReadGroupAsync(
+                _streamKey, _consumerGroup, _consumerName, ">", limit)
+            .ConfigureAwait(false);
+
+        if (entries is { Length: 0 })
+        {
+            await WaitForNotificationOrTimeout(ct).ConfigureAwait(false);
+            return [];
+        }
+
+        t?.SetTag("messaging.batch.message_count", entries.Length);
+        LogContext.Debug?.Log("Read {Count} message(s) from {Stream}", entries.Length, _streamKey);
+
+        return entries;
+    }
+
+    private async Task HandleMessage(IDatabase db, StreamEntry entry)
+    {
+        if (IsStopping)
+            return;
+
+        var message = RedisTransportMessage.FromStreamEntry(_streamKey, entry);
+
+        var lockContext = new RedisReceiveLockContext(_context.InputAddress, message, db, _consumerGroup);
+
+        if (message.ExpirationTime.HasValue && message.ExpirationTime.Value < DateTimeOffset.UtcNow)
+        {
+            await lockContext.Complete().ConfigureAwait(false);
+            return;
+        }
+
+        using var activity = Otel.ActivitySource.StartActivity(ActivityKind.Consumer);
+        activity?.SetTag("messaging.system", "redis");
+        activity?.SetTag("messaging.destination", _streamKey);
+        activity?.SetTag("messaging.message_id", message.MessageId?.ToString());
+        activity?.SetTag("messaging.message_type", message.MessageType);
+        activity?.SetTag("messaging.redis.entry_id", entry.Id.ToString());
+
+        LogContext.Debug?.Log("Dispatching message {MessageId} ({MessageType}) from {Stream}",
+            message.MessageId, message.MessageType, _streamKey);
+
+        using var receiveContext = new RedisReceiveContext(message, _context, lockContext);
+
+        try
+        {
+            await Dispatch(entry.Id.ToString(), receiveContext, lockContext).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            activity?.SetStatus(ActivityStatusCode.Error, ex.Message);
+            receiveContext.LogTransportFaulted(ex);
+        }
+        finally
+        {
+            MessageHandled();
+        }
+    }
+
+    private void MessageHandled()
+    {
+        Interlocked.Exchange(ref _notifyCts, new CancellationTokenSource()).Cancel();
+    }
+
+    private async Task WaitForNotificationOrTimeout(CancellationToken ct)
+    {
+        using var linked = CancellationTokenSource.CreateLinkedTokenSource(ct, _notifyCts.Token);
+        try
+        {
+            await Task.Delay(_settings.PollingInterval, linked.Token).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
         }
     }
 
@@ -142,7 +191,10 @@ internal sealed class RedisMessageReceiver : ConsumerAgent<string>
                 await ApplyExpiriesAsync(_clientContext.Database).ConfigureAwait(false);
                 LogContext.Debug?.Log("Refreshed TTL for ephemeral queue {Queue}", _consumerGroup);
             }
-            catch (OperationCanceledException) { break; }
+            catch (OperationCanceledException)
+            {
+                break;
+            }
             catch (Exception ex)
             {
                 LogContext.Debug?.Log(ex, "TTL refresh faulted for {Queue}", _consumerGroup);
@@ -178,55 +230,6 @@ internal sealed class RedisMessageReceiver : ConsumerAgent<string>
         catch (Exception ex)
         {
             LogContext.Debug?.Log(ex, "XTRIM MINID faulted on {Stream}", _streamKey);
-        }
-    }
-
-    private async Task WaitForNotificationOrTimeout()
-    {
-        var current = Volatile.Read(ref _wakeup);
-        var delay = Task.Delay(_settings.PollingInterval, Stopping);
-
-        try
-        {
-            await Task.WhenAny(current.Task, delay).ConfigureAwait(false);
-        }
-        catch (OperationCanceledException)
-        {
-        }
-
-        if (current.Task.IsCompleted)
-            Interlocked.CompareExchange(ref _wakeup,
-                new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously), current);
-    }
-
-    private async Task Dispatch(IDatabase db, StreamEntry entry)
-    {
-        if (IsStopping)
-            return;
-
-        var message = RedisTransportMessage.FromStreamEntry(_streamKey, entry);
-
-        using var activity = Otel.ActivitySource.StartActivity(ActivityKind.Consumer);
-        activity?.SetTag("messaging.system", "redis");
-        activity?.SetTag("messaging.destination", _streamKey);
-        activity?.SetTag("messaging.message_id", message.MessageId?.ToString());
-        activity?.SetTag("messaging.message_type", message.MessageType);
-        activity?.SetTag("messaging.redis.entry_id", entry.Id.ToString());
-
-        LogContext.Debug?.Log("Dispatching message {MessageId} ({MessageType}) from {Stream}",
-            message.MessageId, message.MessageType, _streamKey);
-
-        var lockContext = new RedisReceiveLockContext(_context.InputAddress, message, db, _consumerGroup);
-        using var receiveContext = new RedisReceiveContext(message, _context, lockContext);
-
-        try
-        {
-            await Dispatch(entry.Id.ToString(), receiveContext, lockContext).ConfigureAwait(false);
-        }
-        catch (Exception ex)
-        {
-            activity?.SetStatus(ActivityStatusCode.Error, ex.Message);
-            receiveContext.LogTransportFaulted(ex);
         }
     }
 

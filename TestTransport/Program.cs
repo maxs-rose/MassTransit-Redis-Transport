@@ -17,8 +17,8 @@ if (builder.Configuration.GetValue<bool>("UseWorker"))
 builder.Services.AddMassTransit(x =>
 {
     // x.AddConsumers(typeof(Program).Assembly);
-    // x.AddConsumer<PingConsumer>();
-    x.AddConsumer<Ping2Consumer, Ping2Consumer.Ping2ConsumerDefinition>();
+    x.AddConsumer<PingConsumer>();
+    // x.AddConsumer<Ping2Consumer, Ping2Consumer.Ping2ConsumerDefinition>();
     // x.AddConsumer<SendConsumer>();
 
     x.UsingRedis((context, cfg) => { cfg.ConfigureEndpoints(context); });
