@@ -1,7 +1,9 @@
+using MassTransit;
 using MassTransit.Configuration;
 using MassTransit.Topology;
 using MassTransit.Transports;
 using RedisTransport.Transport;
+using RedisTransport.Transport.Middleware;
 using IHost = MassTransit.Transports.IHost;
 
 namespace RedisTransport.Configuration;
@@ -37,7 +39,14 @@ internal sealed class RedisReceiveEndpointConfiguration
     public void Build(IHost host)
     {
         var context = BuildContext();
-        var transport = new RedisReceiveTransport(_hostConfiguration, context, Settings);
+
+        var configurator = new PipeConfigurator<RedisClientContext>();
+        configurator.UseFilter(new RedisConsumerFilter(context, Settings));
+        var clientPipe = configurator.Build();
+
+        var transport = new ReceiveTransport<RedisClientContext>(
+            _hostConfiguration, context, context.GetOrCreateSupervisor, clientPipe);
+
         var receiveEndpoint = new ReceiveEndpoint(transport, context);
         host.AddReceiveEndpoint(Settings.QueueName, receiveEndpoint);
         ReceiveEndpoint = receiveEndpoint;

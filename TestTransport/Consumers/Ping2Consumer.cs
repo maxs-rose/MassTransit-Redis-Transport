@@ -14,6 +14,11 @@ public sealed class Ping2Consumer(ILogger<Ping2Consumer> logger) : IConsumer<Pin
 
     public sealed class Ping2ConsumerDefinition : ConsumerDefinition<Ping2Consumer>
     {
+        public Ping2ConsumerDefinition()
+        {
+            Endpoint(x => x.Temporary = true);
+        }
+
         protected override void ConfigureConsumer(IReceiveEndpointConfigurator endpointConfigurator, IConsumerConfigurator<Ping2Consumer> consumerConfigurator, IRegistrationContext context)
         {
             if (endpointConfigurator is IRedisReceiveEndpointConfigurator redisEndpointConfigurator)

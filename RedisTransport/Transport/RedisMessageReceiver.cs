@@ -9,25 +9,25 @@ namespace RedisTransport.Transport;
 
 internal sealed class RedisMessageReceiver : ConsumerAgent<string>
 {
+    private readonly RedisClientContext _clientContext;
     private readonly string _consumerGroup;
     private readonly string _consumerName;
     private readonly ReceiveEndpointContext _context;
-    private readonly IRedisHostConfiguration _hostConfiguration;
     private readonly string _notifyChannel;
     private readonly RedisReceiveSettings _settings;
     private readonly string _streamKey;
     private TaskCompletionSource<bool> _wakeup = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
     public RedisMessageReceiver(
+        RedisClientContext clientContext,
         ReceiveEndpointContext context,
-        IRedisHostConfiguration hostConfiguration,
         RedisReceiveSettings settings,
         string streamKey,
         string notifyChannel,
         string consumerGroup) : base(context)
     {
+        _clientContext = clientContext;
         _context = context;
-        _hostConfiguration = hostConfiguration;
         _settings = settings;
         _streamKey = streamKey;
         _notifyChannel = notifyChannel;
@@ -44,12 +44,10 @@ internal sealed class RedisMessageReceiver : ConsumerAgent<string>
         {
             await EnsureConsumerGroup().ConfigureAwait(false);
 
-            var subscriber = _hostConfiguration.Multiplexer.GetSubscriber();
-            var channel = RedisChannel.Literal(_notifyChannel);
-
             try
             {
-                notifyQueue = await subscriber.SubscribeAsync(channel).ConfigureAwait(false);
+                var channel = RedisChannel.Literal(_notifyChannel);
+                notifyQueue = await _clientContext.Subscriber.SubscribeAsync(channel).ConfigureAwait(false);
                 notifyQueue.OnMessage(_ => Volatile.Read(ref _wakeup).TrySetResult(true));
                 LogContext.Debug?.Log("Subscribed to notify channel {Channel}", _notifyChannel);
             }
@@ -62,7 +60,7 @@ internal sealed class RedisMessageReceiver : ConsumerAgent<string>
                 _streamKey, _consumerName, _consumerGroup);
             SetReady();
 
-            var db = _hostConfiguration.Multiplexer.GetDatabase();
+            var db = _clientContext.Database;
 
             while (!IsStopping)
                 try
@@ -192,7 +190,7 @@ internal sealed class RedisMessageReceiver : ConsumerAgent<string>
 
     private async Task EnsureConsumerGroup()
     {
-        var db = _hostConfiguration.Multiplexer.GetDatabase();
+        var db = _clientContext.Database;
         try
         {
             await db.StreamCreateConsumerGroupAsync(_streamKey, _consumerGroup, "0-0").ConfigureAwait(false);

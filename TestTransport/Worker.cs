@@ -13,7 +13,6 @@ public class Worker(ILogger<Worker> logger, IServiceProvider serviceProvider) : 
             await using var scope = serviceProvider.CreateAsyncScope();
             var bus = scope.ServiceProvider.GetRequiredService<IBus>();
             logger.LogInformation("Sending Ping");
-            // await bus.Publish(new Ping($"{Guid.NewGuid()}"), stoppingToken);
             await bus.Publish(new Ping($"{Guid.NewGuid()}"), stoppingToken);
 
             await Task.Delay(1000, stoppingToken);
