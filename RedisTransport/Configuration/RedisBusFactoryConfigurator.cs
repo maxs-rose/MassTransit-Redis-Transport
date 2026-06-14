@@ -1,7 +1,7 @@
 using MassTransit;
 using MassTransit.Configuration;
 
-namespace RedisTransport.Transport.Configuration;
+namespace RedisTransport.Configuration;
 
 internal sealed class RedisBusFactoryConfigurator : BusFactoryConfigurator, IRedisBusFactoryConfigurator, IBusFactory
 {
@@ -23,7 +23,8 @@ internal sealed class RedisBusFactoryConfigurator : BusFactoryConfigurator, IRed
         return _busConfiguration.HostConfiguration.CreateReceiveEndpointConfiguration(_settings, _busConfiguration.BusEndpointConfiguration, c => configure(c));
     }
 
-    public void ReceiveEndpoint(IEndpointDefinition definition, IEndpointNameFormatter? endpointNameFormatter = null, Action<IReceiveEndpointConfigurator>? configureEndpoint = null)
+    public void ReceiveEndpoint(IEndpointDefinition definition, IEndpointNameFormatter? endpointNameFormatter = null,
+        Action<IReceiveEndpointConfigurator>? configureEndpoint = null)
     {
         _hostConfiguration.ReceiveEndpoint(definition, endpointNameFormatter, configureEndpoint);
     }
@@ -33,7 +34,8 @@ internal sealed class RedisBusFactoryConfigurator : BusFactoryConfigurator, IRed
         _hostConfiguration.ReceiveEndpoint(queueName, configureEndpoint);
     }
 
-    public void ReceiveEndpoint(IEndpointDefinition definition, IEndpointNameFormatter? endpointNameFormatter = null, Action<IRedisReceiveEndpointConfigurator>? configureEndpoint = null)
+    public void ReceiveEndpoint(IEndpointDefinition definition, IEndpointNameFormatter? endpointNameFormatter = null,
+        Action<IRedisReceiveEndpointConfigurator>? configureEndpoint = null)
     {
         _hostConfiguration.ReceiveEndpoint(definition, endpointNameFormatter, configureEndpoint);
     }

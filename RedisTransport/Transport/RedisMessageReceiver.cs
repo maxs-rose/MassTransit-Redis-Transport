@@ -1,7 +1,8 @@
+using System.Diagnostics;
 using MassTransit;
 using MassTransit.Transports;
+using RedisTransport.Configuration;
 using RedisTransport.Telemetry;
-using RedisTransport.Transport.Configuration;
 using StackExchange.Redis;
 
 namespace RedisTransport.Transport;
@@ -50,12 +51,15 @@ internal sealed class RedisMessageReceiver : ConsumerAgent<string>
             {
                 notifyQueue = await subscriber.SubscribeAsync(channel).ConfigureAwait(false);
                 notifyQueue.OnMessage(_ => Volatile.Read(ref _wakeup).TrySetResult(true));
+                LogContext.Debug?.Log("Subscribed to notify channel {Channel}", _notifyChannel);
             }
             catch (Exception ex)
             {
-                LogContext.Warning?.Log(ex, "Failed to subscribe to {Channel}; falling back to polling", _notifyChannel);
+                LogContext.Warning?.Log(ex, "Failed to subscribe to notify channel {Channel}; falling back to polling", _notifyChannel);
             }
 
+            LogContext.Debug?.Log("Receiver ready on stream {Stream} (consumer: {ConsumerName}, group: {ConsumerGroup})",
+                _streamKey, _consumerName, _consumerGroup);
             SetReady();
 
             var db = _hostConfiguration.Multiplexer.GetDatabase();
@@ -63,14 +67,21 @@ internal sealed class RedisMessageReceiver : ConsumerAgent<string>
             while (!IsStopping)
                 try
                 {
-                    using var t = Otel.TraceActivitySource.StartActivity($"Poll: {_streamKey}");
+                    using var t = Otel.TraceActivitySource.StartActivity(ActivityKind.Consumer);
+                    t?.SetTag("messaging.system", "redis");
+                    t?.SetTag("messaging.destination", _streamKey);
 
                     await TrimExpiredMessages(db).ConfigureAwait(false);
 
-                    var entries = await db.StreamReadGroupAsync(_streamKey, _consumerGroup, _consumerName, ">", _settings.PrefetchCount).ConfigureAwait(false);
+                    var entries = await db.StreamReadGroupAsync(
+                            _streamKey, _consumerGroup, _consumerName, ">", _settings.PrefetchCount)
+                        .ConfigureAwait(false);
 
                     if (entries is { Length: > 0 })
                     {
+                        t?.SetTag("messaging.batch.message_count", entries.Length);
+                        LogContext.Debug?.Log("Read {Count} message(s) from {Stream}", entries.Length, _streamKey);
+
                         foreach (var entry in entries)
                             await Dispatch(db, entry).ConfigureAwait(false);
                         continue;
@@ -84,7 +95,7 @@ internal sealed class RedisMessageReceiver : ConsumerAgent<string>
                 }
                 catch (Exception ex)
                 {
-                    LogContext.Warning?.Log(ex, "Redis receive loop iteration faulted on {Stream}", _streamKey);
+                    LogContext.Warning?.Log(ex, "Receive loop faulted on {Stream}; waiting before retry", _streamKey);
                     try
                     {
                         await Task.Delay(_settings.PollingInterval, Stopping).ConfigureAwait(false);
@@ -96,7 +107,7 @@ internal sealed class RedisMessageReceiver : ConsumerAgent<string>
         }
         catch (Exception ex)
         {
-            LogContext.Error?.Log(ex, "Redis receive loop terminated for {Stream}", _streamKey);
+            LogContext.Error?.Log(ex, "Receive loop terminated for {Stream}", _streamKey);
         }
         finally
         {
@@ -144,7 +155,8 @@ internal sealed class RedisMessageReceiver : ConsumerAgent<string>
         }
 
         if (current.Task.IsCompleted)
-            Interlocked.CompareExchange(ref _wakeup, new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously), current);
+            Interlocked.CompareExchange(ref _wakeup,
+                new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously), current);
     }
 
     private async Task Dispatch(IDatabase db, StreamEntry entry)
@@ -153,6 +165,17 @@ internal sealed class RedisMessageReceiver : ConsumerAgent<string>
             return;
 
         var message = RedisTransportMessage.FromStreamEntry(_streamKey, entry);
+
+        using var activity = Otel.ActivitySource.StartActivity(ActivityKind.Consumer);
+        activity?.SetTag("messaging.system", "redis");
+        activity?.SetTag("messaging.destination", _streamKey);
+        activity?.SetTag("messaging.message_id", message.MessageId?.ToString());
+        activity?.SetTag("messaging.message_type", message.MessageType);
+        activity?.SetTag("messaging.redis.entry_id", entry.Id.ToString());
+
+        LogContext.Debug?.Log("Dispatching message {MessageId} ({MessageType}) from {Stream}",
+            message.MessageId, message.MessageType, _streamKey);
+
         var lockContext = new RedisReceiveLockContext(_context.InputAddress, message, db, _consumerGroup);
         using var receiveContext = new RedisReceiveContext(message, _context, lockContext);
 
@@ -162,6 +185,7 @@ internal sealed class RedisMessageReceiver : ConsumerAgent<string>
         }
         catch (Exception ex)
         {
+            activity?.SetStatus(ActivityStatusCode.Error, ex.Message);
             receiveContext.LogTransportFaulted(ex);
         }
     }
@@ -172,9 +196,11 @@ internal sealed class RedisMessageReceiver : ConsumerAgent<string>
         try
         {
             await db.StreamCreateConsumerGroupAsync(_streamKey, _consumerGroup, "0-0").ConfigureAwait(false);
+            LogContext.Debug?.Log("Created consumer group {ConsumerGroup} on {Stream}", _consumerGroup, _streamKey);
         }
         catch (RedisServerException ex) when (ex.Message.Contains("BUSYGROUP", StringComparison.OrdinalIgnoreCase))
         {
+            LogContext.Debug?.Log("Consumer group {ConsumerGroup} already exists on {Stream}", _consumerGroup, _streamKey);
         }
     }
 }

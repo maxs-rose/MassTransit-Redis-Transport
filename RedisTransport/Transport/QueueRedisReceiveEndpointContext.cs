@@ -1,11 +1,14 @@
 using MassTransit;
 using MassTransit.Configuration;
 using MassTransit.Transports;
-using RedisTransport.Transport.Configuration;
+using RedisTransport.Configuration;
 
 namespace RedisTransport.Transport;
 
-internal sealed class QueueRedisReceiveEndpointContext(IRedisHostConfiguration hostConfiguration, IReceiveEndpointConfiguration configuration, IReadOnlyCollection<Type> subscribedMessageTypes)
+internal sealed class QueueRedisReceiveEndpointContext(
+    IRedisHostConfiguration hostConfiguration,
+    IReceiveEndpointConfiguration configuration,
+    IReadOnlyCollection<Type> subscribedMessageTypes)
     : BaseReceiveEndpointContext(hostConfiguration, configuration)
 {
     public IReadOnlyCollection<Type> SubscribedMessageTypes { get; } = subscribedMessageTypes;

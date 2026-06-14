@@ -19,6 +19,8 @@ internal sealed class RedisReceiveLockContext(Uri inputAddress, RedisTransportMe
             await database.StreamAcknowledgeAsync(message.StreamKey, consumerGroup, message.EntryId).ConfigureAwait(false);
             await database.StreamDeleteAsync(message.StreamKey, [message.EntryId]).ConfigureAwait(false);
             _locked = false;
+
+            LogContext.Debug?.Log("Acknowledged message {EntryId} on {Stream}", message.EntryId, message.StreamKey);
         }
         catch (Exception ex)
         {
@@ -28,7 +30,8 @@ internal sealed class RedisReceiveLockContext(Uri inputAddress, RedisTransportMe
 
     public Task Faulted(Exception exception)
     {
-        // Leave entry in the PEL so XAUTOCLAIM redelivers it after LockDuration idle time.
+        // Entry stays in PEL; XAUTOCLAIM redelivers it after idle timeout.
+        LogContext.Debug?.Log(exception, "Message {EntryId} on {Stream} left in PEL for redelivery", message.EntryId, message.StreamKey);
         return Task.CompletedTask;
     }
 

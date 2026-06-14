@@ -1,6 +1,6 @@
 using MassTransit.Configuration;
 
-namespace RedisTransport.Transport.Configuration;
+namespace RedisTransport.Configuration;
 
 internal class RedisEndpointConfiguration : EndpointConfiguration, IRedisEndpointConfiguration
 {
@@ -9,10 +9,7 @@ internal class RedisEndpointConfiguration : EndpointConfiguration, IRedisEndpoin
         Topology = topologyConfiguration;
     }
 
-    private RedisEndpointConfiguration(
-        IEndpointConfiguration configuration,
-        IRedisTopologyConfiguration topologyConfiguration,
-        bool isBusEndpoint)
+    private RedisEndpointConfiguration(IEndpointConfiguration configuration, IRedisTopologyConfiguration topologyConfiguration, bool isBusEndpoint)
         : base(configuration, topologyConfiguration, isBusEndpoint)
     {
         Topology = topologyConfiguration;
@@ -23,7 +20,6 @@ internal class RedisEndpointConfiguration : EndpointConfiguration, IRedisEndpoin
     public IRedisEndpointConfiguration CreateEndpointConfiguration(bool isBusEndpoint)
     {
         var topologyConfiguration = new RedisTopologyConfiguration(Topology);
-
         return new RedisEndpointConfiguration(this, topologyConfiguration, isBusEndpoint);
     }
 }

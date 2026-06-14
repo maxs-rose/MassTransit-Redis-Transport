@@ -1,27 +1,24 @@
 using MassTransit.Configuration;
 using MassTransit.Topology;
 using MassTransit.Transports;
-using RedisTransport.Transport.Configuration;
+using RedisTransport.Transport;
 using IHost = MassTransit.Transports.IHost;
 
-namespace RedisTransport.Transport;
+namespace RedisTransport.Configuration;
 
-internal sealed class RedisReceiveEndpointConfiguration :
-    ReceiveEndpointConfiguration,
-    IRedisReceiveEndpointConfiguration,
-    IRedisReceiveEndpointConfigurator
+internal sealed class RedisReceiveEndpointConfiguration
+    : ReceiveEndpointConfiguration, IRedisReceiveEndpointConfiguration, IRedisReceiveEndpointConfigurator
 {
     private readonly IRedisEndpointConfiguration _endpointConfiguration;
     private readonly IRedisHostConfiguration _hostConfiguration;
     private readonly Lazy<Uri> _inputAddress;
 
-    public RedisReceiveEndpointConfiguration(IRedisHostConfiguration hostConfiguration, RedisReceiveSettings settings, IRedisEndpointConfiguration endpointConfiguration)
-        : base(hostConfiguration, endpointConfiguration)
+    public RedisReceiveEndpointConfiguration(IRedisHostConfiguration hostConfiguration, RedisReceiveSettings settings,
+        IRedisEndpointConfiguration endpointConfiguration) : base(hostConfiguration, endpointConfiguration)
     {
         _hostConfiguration = hostConfiguration;
         Settings = settings;
         _endpointConfiguration = endpointConfiguration;
-
         _inputAddress = new Lazy<Uri>(() => new RedisEndpointAddress(hostConfiguration.HostAddress, Settings.QueueName));
     }
 
@@ -34,19 +31,15 @@ internal sealed class RedisReceiveEndpointConfiguration :
 
     public override ReceiveEndpointContext CreateReceiveEndpointContext()
     {
-        return CreateRedisReceiveEndpointContext();
+        return BuildContext();
     }
 
     public void Build(IHost host)
     {
-        var context = CreateRedisReceiveEndpointContext();
-
+        var context = BuildContext();
         var transport = new RedisReceiveTransport(_hostConfiguration, context, Settings);
-
         var receiveEndpoint = new ReceiveEndpoint(transport, context);
-
         host.AddReceiveEndpoint(Settings.QueueName, receiveEndpoint);
-
         ReceiveEndpoint = receiveEndpoint;
     }
 
@@ -65,10 +58,11 @@ internal sealed class RedisReceiveEndpointConfiguration :
         set => Settings.PollingInterval = value;
     }
 
-    private QueueRedisReceiveEndpointContext CreateRedisReceiveEndpointContext()
+    private QueueRedisReceiveEndpointContext BuildContext()
     {
         var builder = new RedisReceiveEndpointBuilder(this);
         ApplySpecifications(builder);
+
         var context = new QueueRedisReceiveEndpointContext(_hostConfiguration, this, builder.SubscribedMessageTypes);
 
         var errorQueueName = DefaultErrorQueueNameFormatter.Instance.FormatErrorQueueName(Settings.QueueName);

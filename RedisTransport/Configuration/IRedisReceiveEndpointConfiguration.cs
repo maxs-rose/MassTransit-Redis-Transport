@@ -1,7 +1,7 @@
 using MassTransit.Configuration;
 using IHost = MassTransit.Transports.IHost;
 
-namespace RedisTransport.Transport.Configuration;
+namespace RedisTransport.Configuration;
 
 internal interface IRedisReceiveEndpointConfiguration : IReceiveEndpointConfiguration, IRedisEndpointConfiguration
 {

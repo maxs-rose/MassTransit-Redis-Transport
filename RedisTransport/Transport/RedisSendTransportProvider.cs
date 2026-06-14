@@ -1,9 +1,10 @@
 using MassTransit.Transports;
-using RedisTransport.Transport.Configuration;
+using RedisTransport.Configuration;
 
 namespace RedisTransport.Transport;
 
-internal sealed class RedisSendTransportProvider(IRedisHostConfiguration hostConfiguration, ReceiveEndpointContext context) : ISendTransportProvider
+internal sealed class RedisSendTransportProvider(IRedisHostConfiguration hostConfiguration, ReceiveEndpointContext context)
+    : ISendTransportProvider
 {
     public Uri NormalizeAddress(Uri address)
     {
@@ -18,26 +19,13 @@ internal sealed class RedisSendTransportProvider(IRedisHostConfiguration hostCon
     }
 }
 
-internal sealed class RedisPublishTransportProvider(IRedisHostConfiguration hostConfiguration, ReceiveEndpointContext context) : IPublishTransportProvider
+internal sealed class RedisPublishTransportProvider(IRedisHostConfiguration hostConfiguration, ReceiveEndpointContext context)
+    : IPublishTransportProvider
 {
     public Task<ISendTransport> GetPublishTransport<T>(Uri? publishAddress) where T : class
     {
-        var topicName = TopicName(typeof(T));
+        var topicName = RedisMessageTypeFormatter.Format(typeof(T));
         ISendTransport transport = new RedisSendTransportContext(hostConfiguration, context, topicName, RedisEndpointAddress.AddressType.Topic);
         return Task.FromResult(transport);
-    }
-
-    private static string TopicName(Type type)
-    {
-        return MessageTypeNameFormatter.Format(type);
-    }
-}
-
-internal static class MessageTypeNameFormatter
-{
-    public static string Format(Type type)
-    {
-        var ns = type.Namespace ?? "";
-        return string.IsNullOrEmpty(ns) ? type.Name : $"{ns}.{type.Name}";
     }
 }

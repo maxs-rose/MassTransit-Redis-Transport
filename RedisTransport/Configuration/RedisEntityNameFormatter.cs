@@ -1,8 +1,8 @@
 using MassTransit.Transports;
 
-namespace RedisTransport.Transport.Configuration;
+namespace RedisTransport.Configuration;
 
-internal class RedisEntityNameFormatter(bool includeNamespace) : IMessageNameFormatter
+internal sealed class RedisEntityNameFormatter(bool includeNamespace) : IMessageNameFormatter
 {
     private readonly IMessageNameFormatter _formatter = new DefaultMessageNameFormatter("::", "--", ":", "-", includeNamespace);
 

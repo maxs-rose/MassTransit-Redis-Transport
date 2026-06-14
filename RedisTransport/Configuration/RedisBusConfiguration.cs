@@ -1,18 +1,18 @@
 using MassTransit;
 using MassTransit.Configuration;
 using MassTransit.Observables;
+using MassTransit.Topology;
 
-namespace RedisTransport.Transport.Configuration;
+namespace RedisTransport.Configuration;
 
 internal sealed class RedisBusConfiguration : RedisEndpointConfiguration, IRedisBusConfiguration
 {
-    private readonly BusObservable _busObservers;
+    private readonly BusObservable _busObservers = new();
 
     public RedisBusConfiguration(IRedisTopologyConfiguration topologyConfiguration) : base(topologyConfiguration)
     {
         HostConfiguration = new RedisHostConfiguration(this, topologyConfiguration);
         BusEndpointConfiguration = CreateEndpointConfiguration(true);
-        _busObservers = new BusObservable();
     }
 
     IHostConfiguration IBusConfiguration.HostConfiguration => HostConfiguration;
@@ -30,5 +30,11 @@ internal sealed class RedisBusConfiguration : RedisEndpointConfiguration, IRedis
     public ConnectHandle ConnectEndpointConfigurationObserver(IEndpointConfigurationObserver observer)
     {
         return HostConfiguration.ConnectEndpointConfigurationObserver(observer);
+    }
+
+    public static RedisBusConfiguration Create()
+    {
+        var messageTopology = new MessageTopology(Defaults.EntityNameFormatter);
+        return new RedisBusConfiguration(new RedisTopologyConfiguration(messageTopology));
     }
 }

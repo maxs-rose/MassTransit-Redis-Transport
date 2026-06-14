@@ -2,7 +2,7 @@ using MassTransit;
 using MassTransit.Logging;
 using OpenTelemetry;
 using RedisTransport.Telemetry;
-using RedisTransport.Transport.Configuration;
+using RedisTransport.Configuration;
 using TestTransport;
 using TestTransport.Consumers;
 

@@ -1,18 +1,21 @@
 using MassTransit;
 using MassTransit.Configuration;
+using RedisTransport.Transport;
 using StackExchange.Redis;
 using IHost = MassTransit.Transports.IHost;
 
-namespace RedisTransport.Transport.Configuration;
+namespace RedisTransport.Configuration;
 
-internal sealed class RedisHostConfiguration : BaseHostConfiguration<IRedisReceiveEndpointConfiguration, IRedisReceiveEndpointConfigurator>, IRedisHostConfiguration
+internal sealed class RedisHostConfiguration
+    : BaseHostConfiguration<IRedisReceiveEndpointConfiguration, IRedisReceiveEndpointConfigurator>, IRedisHostConfiguration
 {
     private readonly IRedisBusConfiguration _busConfiguration;
 
-    public RedisHostConfiguration(IRedisBusConfiguration busConfiguration, IRedisTopologyConfiguration topologyConfiguration) : base(busConfiguration)
+    public RedisHostConfiguration(IRedisBusConfiguration busConfiguration, IRedisTopologyConfiguration topologyConfiguration)
+        : base(busConfiguration)
     {
         _busConfiguration = busConfiguration;
-        Topology = new BusTopology(this, topologyConfiguration);
+        Topology = new RedisBusTopology(this, topologyConfiguration);
 
         ReceiveTransportRetryPolicy = Retry.CreatePolicy(x =>
         {
@@ -29,32 +32,27 @@ internal sealed class RedisHostConfiguration : BaseHostConfiguration<IRedisRecei
 
     public override Uri HostAddress { get; }
     public override IBusTopology Topology { get; }
-
     public override IRetryPolicy ReceiveTransportRetryPolicy { get; }
 
-    public IRedisReceiveEndpointConfiguration CreateReceiveEndpointConfiguration(string queueName, Action<IRedisReceiveEndpointConfigurator>? configure = null)
-    {
-        var endpointConfiguration = _busConfiguration.CreateEndpointConfiguration();
-        var settings = new RedisReceiveSettings(queueName);
-
-        return CreateReceiveEndpointConfiguration(settings, endpointConfiguration, configure);
-    }
-
-    public IRedisReceiveEndpointConfiguration CreateReceiveEndpointConfiguration(RedisReceiveSettings settings, IRedisEndpointConfiguration endpointConfiguration,
+    public IRedisReceiveEndpointConfiguration CreateReceiveEndpointConfiguration(string queueName,
         Action<IRedisReceiveEndpointConfigurator>? configure = null)
     {
+        var settings = new RedisReceiveSettings(queueName);
+        return CreateReceiveEndpointConfiguration(settings, _busConfiguration.CreateEndpointConfiguration(), configure);
+    }
+
+    public IRedisReceiveEndpointConfiguration CreateReceiveEndpointConfiguration(RedisReceiveSettings settings,
+        IRedisEndpointConfiguration endpointConfiguration, Action<IRedisReceiveEndpointConfigurator>? configure = null)
+    {
         var configuration = new RedisReceiveEndpointConfiguration(this, settings, endpointConfiguration);
-
         configure?.Invoke(configuration);
-
         Observers.EndpointConfigured(configuration);
-
         Add(configuration);
-
         return configuration;
     }
 
-    public override IReceiveEndpointConfiguration CreateReceiveEndpointConfiguration(string queueName, Action<IReceiveEndpointConfigurator>? configure)
+    public override IReceiveEndpointConfiguration CreateReceiveEndpointConfiguration(string queueName,
+        Action<IReceiveEndpointConfigurator>? configure)
     {
         return CreateReceiveEndpointConfiguration(queueName, configure == null ? null : c => configure(c));
     }
@@ -62,19 +60,18 @@ internal sealed class RedisHostConfiguration : BaseHostConfiguration<IRedisRecei
     public override IHost Build()
     {
         var host = new RedisHost(this, Topology);
-
         foreach (var endpointConfiguration in GetConfiguredEndpoints())
             endpointConfiguration.Build(host);
-
         return host;
     }
 
-    public override void ReceiveEndpoint(IEndpointDefinition definition, IEndpointNameFormatter? endpointNameFormatter, Action<IRedisReceiveEndpointConfigurator>? configureEndpoint = null)
+    public override void ReceiveEndpoint(IEndpointDefinition definition, IEndpointNameFormatter? endpointNameFormatter,
+        Action<IRedisReceiveEndpointConfigurator>? configureEndpoint = null)
     {
         var queueName = definition.GetEndpointName(endpointNameFormatter ?? DefaultEndpointNameFormatter.Instance);
         ReceiveEndpoint(queueName, configurator =>
         {
-            ApplyRedisEndpointDefinition(configurator, definition);
+            ApplyEndpointDefinition(configurator, definition);
             configureEndpoint?.Invoke(configurator);
         });
     }
@@ -84,7 +81,7 @@ internal sealed class RedisHostConfiguration : BaseHostConfiguration<IRedisRecei
         CreateReceiveEndpointConfiguration(queueName, configureEndpoint);
     }
 
-    private static void ApplyRedisEndpointDefinition(IRedisReceiveEndpointConfigurator configurator, IEndpointDefinition definition)
+    private static void ApplyEndpointDefinition(IRedisReceiveEndpointConfigurator configurator, IEndpointDefinition definition)
     {
         if (definition.IsTemporary)
             configurator.AutoDeleteOnIdle = Defaults.TemporaryAutoDeleteOnIdle;
@@ -101,9 +98,11 @@ internal sealed class RedisHostConfiguration : BaseHostConfiguration<IRedisRecei
     }
 }
 
-internal sealed class BusTopology(IRedisHostConfiguration host, IRedisTopologyConfiguration topology) : IBusTopology
+internal sealed class RedisBusTopology(IRedisHostConfiguration host, IRedisTopologyConfiguration topology) : IBusTopology
 {
     public IConsumeTopology ConsumeTopology => topology.Consume;
+    public ISendTopology SendTopology => topology.Send;
+    public IPublishTopology PublishTopology => topology.Publish;
 
     public IMessagePublishTopology<T> Publish<T>() where T : class
     {
@@ -120,18 +119,15 @@ internal sealed class BusTopology(IRedisHostConfiguration host, IRedisTopologyCo
         return topology.Message.GetMessageTopology<T>();
     }
 
-    public ISendTopology SendTopology => topology.Send;
-    public IPublishTopology PublishTopology => topology.Publish;
-
     public bool TryGetPublishAddress<T>(out Uri publishAddress) where T : class
     {
-        publishAddress = new Uri(host.HostAddress, MessageTypeNameFormatter.Format(typeof(T)));
+        publishAddress = new Uri(host.HostAddress, RedisMessageTypeFormatter.Format(typeof(T)));
         return true;
     }
 
     public bool TryGetPublishAddress(Type messageType, out Uri publishAddress)
     {
-        publishAddress = new Uri(host.HostAddress, MessageTypeNameFormatter.Format(messageType));
+        publishAddress = new Uri(host.HostAddress, RedisMessageTypeFormatter.Format(messageType));
         return true;
     }
 }

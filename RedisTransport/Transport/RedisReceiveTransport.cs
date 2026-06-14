@@ -1,8 +1,8 @@
 using MassTransit;
 using MassTransit.Middleware;
 using MassTransit.Transports;
+using RedisTransport.Configuration;
 using RedisTransport.Telemetry;
-using RedisTransport.Transport.Configuration;
 using StackExchange.Redis;
 
 namespace RedisTransport.Transport;
@@ -12,17 +12,17 @@ internal sealed class RedisReceiveTransport(IRedisHostConfiguration hostConfigur
 {
     private static readonly TimeSpan MaxRefreshInterval = TimeSpan.FromMinutes(1);
     private readonly CancellationTokenSource _lifecycleCts = new();
-
     private readonly List<string> _subscribedTopics = new();
     private RedisMessageReceiver? _receiver;
 
     public ReceiveTransportHandle Start()
     {
-        context.LogContext.Debug?.Log("Starting receive transport: {Address}", context.InputAddress);
-
         if (context is QueueRedisReceiveEndpointContext queueContext)
             foreach (var type in queueContext.SubscribedMessageTypes)
-                _subscribedTopics.Add(MessageTypeNameFormatter.Format(type));
+                _subscribedTopics.Add(RedisMessageTypeFormatter.Format(type));
+
+        LogContext.Debug?.Log("Starting receive transport for {QueueName}, subscribed to {TopicCount} topic(s): {Topics}",
+            settings.QueueName, _subscribedTopics.Count, string.Join(", ", _subscribedTopics));
 
         _ = RegisterAsync();
 
@@ -80,12 +80,19 @@ internal sealed class RedisReceiveTransport(IRedisHostConfiguration hostConfigur
             if (settings.AutoDeleteOnIdle.HasValue)
                 await EnsureStreamExistsAsync(db, queueName).ConfigureAwait(false);
 
-            var pending = new List<Task>();
-            foreach (var topic in _subscribedTopics)
-                pending.Add(db.HashSetAsync(RedisKeys.TopicSubscribers(topic), queueName, "1", flags: CommandFlags.FireAndForget));
+            if (_subscribedTopics.Count > 0)
+            {
+                LogContext.Debug?.Log("Registering {QueueName} as subscriber to {TopicCount} topic(s)", queueName, _subscribedTopics.Count);
 
-            if (pending.Count > 0)
+                var pending = new List<Task>(_subscribedTopics.Count);
+                foreach (var topic in _subscribedTopics)
+                {
+                    LogContext.Debug?.Log("Subscribing {QueueName} to topic {Topic}", queueName, topic);
+                    pending.Add(db.HashSetAsync(RedisKeys.TopicSubscribers(topic), queueName, "1", flags: CommandFlags.FireAndForget));
+                }
+
                 await Task.WhenAll(pending).ConfigureAwait(false);
+            }
 
             if (settings.AutoDeleteOnIdle.HasValue)
                 await ApplyExpiriesAsync(db).ConfigureAwait(false);
@@ -128,16 +135,15 @@ internal sealed class RedisReceiveTransport(IRedisHostConfiguration hostConfigur
 
         var ttl = settings.AutoDeleteOnIdle!.Value;
         var interval = TimeSpan.FromTicks(ttl.Ticks / 2);
-        if (interval > MaxRefreshInterval)
-            interval = MaxRefreshInterval;
-        if (interval < TimeSpan.FromSeconds(1))
-            interval = TimeSpan.FromSeconds(1);
+        if (interval > MaxRefreshInterval) interval = MaxRefreshInterval;
+        if (interval < TimeSpan.FromSeconds(1)) interval = TimeSpan.FromSeconds(1);
 
         while (!ct.IsCancellationRequested)
             try
             {
                 await Task.Delay(interval, ct).ConfigureAwait(false);
                 await ApplyExpiriesAsync(hostConfiguration.Multiplexer.GetDatabase()).ConfigureAwait(false);
+                LogContext.Debug?.Log("Refreshed TTL for ephemeral queue {Queue}", settings.QueueName);
             }
             catch (OperationCanceledException)
             {
@@ -151,16 +157,16 @@ internal sealed class RedisReceiveTransport(IRedisHostConfiguration hostConfigur
 
     private async Task NotifyReadyAsync(RedisMessageReceiver receiver)
     {
-        using var _t = Otel.ActivitySource.StartActivity();
-
         try
         {
             await receiver.Ready.ConfigureAwait(false);
             await context.TransportObservers.NotifyReady(context.InputAddress).ConfigureAwait(false);
+
+            LogContext.Debug?.Log("Receive transport ready at {Address}", context.InputAddress);
         }
         catch (Exception ex)
         {
-            LogContext.Warning?.Log(ex, "Receiver ready notification failed for {Address}", context.InputAddress);
+            LogContext.Warning?.Log(ex, "Ready notification failed for {Address}", context.InputAddress);
         }
     }
 
@@ -180,6 +186,9 @@ internal sealed class RedisReceiveTransport(IRedisHostConfiguration hostConfigur
 
         if (!settings.AutoDeleteOnIdle.HasValue)
             return;
+
+        LogContext.Debug?.Log("Cleaning up ephemeral queue {Queue} and {TopicCount} subscription(s)",
+            settings.QueueName, _subscribedTopics.Count);
 
         try
         {

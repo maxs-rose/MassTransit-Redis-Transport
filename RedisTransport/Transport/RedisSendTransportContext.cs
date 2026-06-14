@@ -1,6 +1,8 @@
+using System.Diagnostics;
 using MassTransit;
 using MassTransit.Transports;
-using RedisTransport.Transport.Configuration;
+using RedisTransport.Configuration;
+using RedisTransport.Telemetry;
 using StackExchange.Redis;
 
 namespace RedisTransport.Transport;
@@ -18,9 +20,7 @@ internal sealed class RedisSendTransportContext(
     public override async Task<SendContext<T>> CreateSendContext<T>(T message, IPipe<SendContext<T>> pipe, CancellationToken cancellationToken)
     {
         var sendContext = new RedisMessageSendContext<T>(message, cancellationToken);
-
         await pipe.Send(sendContext).ConfigureAwait(false);
-
         return sendContext;
     }
 
@@ -28,18 +28,25 @@ internal sealed class RedisSendTransportContext(
     {
         var sendContext = (RedisMessageSendContext<T>)await CreateSendContext(message, pipe, cancellationToken).ConfigureAwait(false);
 
+        var destinationKind = addressType == RedisEndpointAddress.AddressType.Topic ? "topic" : "queue";
+
+        using var activity = Otel.ActivitySource.StartActivity(ActivityKind.Producer);
+        activity?.SetTag("messaging.system", "redis");
+        activity?.SetTag("messaging.destination", EntityName);
+        activity?.SetTag("messaging.destination_kind", destinationKind);
+        activity?.SetTag("messaging.message_id", sendContext.MessageId?.ToString());
+
         try
         {
             if (SendObservers.Count > 0)
                 await SendObservers.PreSend(sendContext).ConfigureAwait(false);
 
             var entries = sendContext.RedisMessage();
-
             var db = hostConfiguration.Multiplexer.GetDatabase();
             var subscriber = hostConfiguration.Multiplexer.GetSubscriber();
 
             if (addressType == RedisEndpointAddress.AddressType.Topic)
-                await FanoutToSubscribers(db, subscriber, entries).ConfigureAwait(false);
+                await FanoutToSubscribers(db, subscriber, entries, sendContext.MessageId).ConfigureAwait(false);
             else
                 await SendToQueue(db, subscriber, EntityName, entries).ConfigureAwait(false);
 
@@ -50,6 +57,7 @@ internal sealed class RedisSendTransportContext(
         }
         catch (Exception ex)
         {
+            activity?.SetStatus(ActivityStatusCode.Error, ex.Message);
             sendContext.LogFaulted(ex);
 
             if (SendObservers.Count > 0)
@@ -59,11 +67,18 @@ internal sealed class RedisSendTransportContext(
         }
     }
 
-    private async Task FanoutToSubscribers(IDatabase db, ISubscriber subscriber, NameValueEntry[] entries)
+    private async Task FanoutToSubscribers(IDatabase db, ISubscriber subscriber, NameValueEntry[] entries, Guid? messageId)
     {
         var subscribers = await db.HashKeysAsync(RedisKeys.TopicSubscribers(EntityName)).ConfigureAwait(false);
+
         if (subscribers.Length == 0)
+        {
+            LogContext.Debug?.Log("No subscribers for topic {Topic}, message {MessageId} dropped", EntityName, messageId);
             return;
+        }
+
+        LogContext.Debug?.Log("Fanning out message {MessageId} to {SubscriberCount} subscriber(s) on topic {Topic}",
+            messageId, subscribers.Length, EntityName);
 
         var pending = new List<Task>(subscribers.Length * 2);
         foreach (var sub in subscribers)
@@ -79,7 +94,7 @@ internal sealed class RedisSendTransportContext(
         await Task.WhenAll(pending).ConfigureAwait(false);
     }
 
-    private async Task SendToQueue(IDatabase db, ISubscriber subscriber, string queueName, NameValueEntry[] entries)
+    private static async Task SendToQueue(IDatabase db, ISubscriber subscriber, string queueName, NameValueEntry[] entries)
     {
         await db.StreamAddAsync(RedisKeys.QueueStream(queueName), entries).ConfigureAwait(false);
         await subscriber.PublishAsync(RedisChannel.Literal(RedisKeys.QueueNotify(queueName)), RedisValue.EmptyString).ConfigureAwait(false);

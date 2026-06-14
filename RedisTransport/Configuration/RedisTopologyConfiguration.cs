@@ -3,7 +3,7 @@ using MassTransit;
 using MassTransit.Configuration;
 using MassTransit.Topology;
 
-namespace RedisTransport.Transport.Configuration;
+namespace RedisTransport.Configuration;
 
 internal sealed class RedisTopologyConfiguration : IRedisTopologyConfiguration
 {
@@ -17,15 +17,12 @@ internal sealed class RedisTopologyConfiguration : IRedisTopologyConfiguration
         send.TryAddConvention(new RoutingKeySendTopologyConvention());
         send.TryAddConvention(new PartitionKeySendTopologyConvention());
 
-        var observer = new PublishToSendTopologyConfigurationObserver(send);
-        publish.ConnectPublishTopologyConfigurationObserver(observer);
-
-        var consume = new RedisConsumeTopology(publish);
+        publish.ConnectPublishTopologyConfigurationObserver(new PublishToSendTopologyConfigurationObserver(send));
 
         Message = messageTopology;
         Send = send;
         Publish = publish;
-        Consume = consume;
+        Consume = new RedisConsumeTopology();
     }
 
     public RedisTopologyConfiguration(IRedisTopologyConfiguration configuration)
@@ -38,9 +35,7 @@ internal sealed class RedisTopologyConfiguration : IRedisTopologyConfiguration
 
     public IEnumerable<ValidationResult> Validate()
     {
-        return Send.Validate()
-            .Concat(Publish.Validate())
-            .Concat(Consume.Validate());
+        return Send.Validate().Concat(Publish.Validate()).Concat(Consume.Validate());
     }
 
     public IMessageTopologyConfigurator Message { get; }
@@ -61,14 +56,10 @@ public sealed class RedisPublishTopology : PublishTopology
     }
 }
 
-public sealed class RedisMessagePublishTopology<T> : MessagePublishTopology<T> where T : class
+public sealed class RedisMessagePublishTopology<T>(IPublishTopology publishTopology)
+    : MessagePublishTopology<T>(publishTopology) where T : class
 {
-    private readonly string _topicName;
-
-    public RedisMessagePublishTopology(IPublishTopology publishTopology) : base(publishTopology)
-    {
-        _topicName = MessageTypeNameFormatter.Format(typeof(T));
-    }
+    private readonly string _topicName = RedisMessageTypeFormatter.Format(typeof(T));
 
     public override bool TryGetPublishAddress(Uri baseAddress, [NotNullWhen(true)] out Uri? publishAddress)
     {
@@ -77,10 +68,4 @@ public sealed class RedisMessagePublishTopology<T> : MessagePublishTopology<T> w
     }
 }
 
-public sealed class RedisConsumeTopology : ConsumeTopology
-{
-    public RedisConsumeTopology(RedisPublishTopology publish)
-    {
-        _ = publish;
-    }
-}
+public sealed class RedisConsumeTopology : ConsumeTopology;

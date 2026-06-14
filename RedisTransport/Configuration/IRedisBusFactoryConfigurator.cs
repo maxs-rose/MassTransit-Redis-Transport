@@ -1,5 +1,5 @@
 using MassTransit;
 
-namespace RedisTransport.Transport.Configuration;
+namespace RedisTransport.Configuration;
 
 public interface IRedisBusFactoryConfigurator : IBusFactoryConfigurator<IRedisReceiveEndpointConfigurator>;

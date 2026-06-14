@@ -1,7 +1,7 @@
 using MassTransit;
 using MassTransit.Transports;
 
-namespace RedisTransport.Transport.Configuration;
+namespace RedisTransport.Configuration;
 
 internal sealed class RedisEndpointNameFormatter(IMessageNameFormatter messageNameFormatter) : DefaultEndpointNameFormatter(true)
 {

@@ -1,5 +1,5 @@
 using MassTransit;
-using RedisTransport.Transport.Configuration;
+using RedisTransport.Configuration;
 
 namespace TestTransport.Consumers;
 

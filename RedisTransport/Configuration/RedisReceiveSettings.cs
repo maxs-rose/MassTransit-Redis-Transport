@@ -1,4 +1,4 @@
-namespace RedisTransport.Transport.Configuration;
+namespace RedisTransport.Configuration;
 
 internal sealed record RedisReceiveSettings(string QueueName, TimeSpan? AutoDeleteOnIdle = null)
 {

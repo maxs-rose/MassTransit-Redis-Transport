@@ -1,10 +1,11 @@
 using MassTransit;
 using MassTransit.Configuration;
-using RedisTransport.Transport.Configuration;
+using RedisTransport.Configuration;
 
 namespace RedisTransport.Transport;
 
-internal sealed class RedisReceiveEndpointBuilder(IRedisReceiveEndpointConfiguration configuration) : ReceiveEndpointBuilder(configuration)
+internal sealed class RedisReceiveEndpointBuilder(IRedisReceiveEndpointConfiguration configuration)
+    : ReceiveEndpointBuilder(configuration)
 {
     private readonly HashSet<Type> _subscribedTypes = new();
 

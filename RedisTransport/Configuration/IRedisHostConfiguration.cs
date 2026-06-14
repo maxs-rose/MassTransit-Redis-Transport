@@ -2,7 +2,7 @@ using MassTransit;
 using MassTransit.Configuration;
 using StackExchange.Redis;
 
-namespace RedisTransport.Transport.Configuration;
+namespace RedisTransport.Configuration;
 
 internal interface IRedisHostConfiguration : IHostConfiguration, IReceiveConfigurator<IRedisReceiveEndpointConfigurator>
 {
