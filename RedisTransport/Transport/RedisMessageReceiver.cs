@@ -5,7 +5,7 @@ using StackExchange.Redis;
 
 namespace RedisTransport.Transport;
 
-public sealed class RedisMessageReceiver : ConsumerAgent<string>
+internal sealed class RedisMessageReceiver : ConsumerAgent<string>
 {
     private readonly string _consumerGroup;
     private readonly string _consumerName;

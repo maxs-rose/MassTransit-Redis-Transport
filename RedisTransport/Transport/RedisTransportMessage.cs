@@ -6,7 +6,7 @@ using StackExchange.Redis;
 
 namespace RedisTransport.Transport;
 
-public sealed class RedisTransportMessage
+internal sealed class RedisTransportMessage
 {
     private SendHeaders? _headers;
 

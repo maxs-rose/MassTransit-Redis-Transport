@@ -4,7 +4,7 @@ using MassTransit.Transports;
 
 namespace RedisTransport.Transport;
 
-public sealed class RedisHeaderProvider(RedisTransportMessage message) : IHeaderProvider
+internal sealed class RedisHeaderProvider(RedisTransportMessage message) : IHeaderProvider
 {
     public IEnumerable<KeyValuePair<string, object>> GetAll()
     {

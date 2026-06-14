@@ -5,7 +5,7 @@ using RedisTransport.Transport.Configuration;
 
 namespace RedisTransport.Transport;
 
-public sealed class QueueRedisReceiveEndpointContext(IRedisHostConfiguration hostConfiguration, IReceiveEndpointConfiguration configuration, IReadOnlyCollection<Type> subscribedMessageTypes)
+internal sealed class QueueRedisReceiveEndpointContext(IRedisHostConfiguration hostConfiguration, IReceiveEndpointConfiguration configuration, IReadOnlyCollection<Type> subscribedMessageTypes)
     : BaseReceiveEndpointContext(hostConfiguration, configuration)
 {
     public IReadOnlyCollection<Type> SubscribedMessageTypes { get; } = subscribedMessageTypes;

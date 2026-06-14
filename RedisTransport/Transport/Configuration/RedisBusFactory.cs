@@ -3,7 +3,7 @@ using MassTransit.Topology;
 
 namespace RedisTransport.Transport.Configuration;
 
-public static class RedisBusFactory
+internal static class RedisBusFactory
 {
     public static IMessageTopologyConfigurator CreateMessageTopology()
     {

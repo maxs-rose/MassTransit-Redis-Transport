@@ -3,29 +3,34 @@ using System.Diagnostics;
 namespace RedisTransport.Transport;
 
 [DebuggerDisplay("{" + nameof(DebuggerDisplay) + "}")]
-public readonly struct RedisEndpointAddress
+internal readonly struct RedisEndpointAddress
 {
-    public const string Scheme = "redis";
+    private const string Scheme = "redis";
 
-    public readonly string Host;
-    public readonly int? Port;
+    private readonly string _host;
+    private readonly int? _port;
+
     public readonly string Name;
     public readonly AddressType Type;
 
-    public enum AddressType { Queue = 0, Topic = 1 }
+    public enum AddressType
+    {
+        Queue = 0,
+        Topic = 1
+    }
 
     public RedisEndpointAddress(Uri hostAddress, string name, AddressType type = AddressType.Queue)
     {
-        Host = hostAddress.Host;
-        Port = hostAddress.IsDefaultPort ? null : hostAddress.Port;
+        _host = hostAddress.Host;
+        _port = hostAddress.IsDefaultPort ? null : hostAddress.Port;
         Name = name;
         Type = type;
     }
 
     public RedisEndpointAddress(Uri hostAddress, Uri address)
     {
-        Host = hostAddress.Host;
-        Port = hostAddress.IsDefaultPort ? null : hostAddress.Port;
+        _host = hostAddress.Host;
+        _port = hostAddress.IsDefaultPort ? null : hostAddress.Port;
 
         var path = address.AbsolutePath.TrimStart('/');
         Name = string.IsNullOrEmpty(path) ? throw new ArgumentException("Endpoint name required", nameof(address)) : path;
@@ -39,8 +44,8 @@ public readonly struct RedisEndpointAddress
         var builder = new UriBuilder
         {
             Scheme = Scheme,
-            Host = address.Host,
-            Port = address.Port ?? -1,
+            Host = address._host,
+            Port = address._port ?? -1,
             Path = "/" + address.Name
         };
 
@@ -50,5 +55,5 @@ public readonly struct RedisEndpointAddress
         return builder.Uri;
     }
 
-    Uri DebuggerDisplay => this;
+    private Uri DebuggerDisplay => this;
 }

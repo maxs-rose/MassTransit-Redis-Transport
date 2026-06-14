@@ -6,7 +6,7 @@ using StackExchange.Redis;
 
 namespace RedisTransport.Transport;
 
-public sealed class RedisReceiveTransport(IRedisHostConfiguration hostConfiguration, ReceiveEndpointContext context, RedisReceiveSettings settings)
+internal sealed class RedisReceiveTransport(IRedisHostConfiguration hostConfiguration, ReceiveEndpointContext context, RedisReceiveSettings settings)
     : Agent, IReceiveTransport
 {
     private static readonly TimeSpan MaxRefreshInterval = TimeSpan.FromMinutes(1);
@@ -95,7 +95,7 @@ public sealed class RedisReceiveTransport(IRedisHostConfiguration hostConfigurat
     {
         try
         {
-            await db.StreamCreateConsumerGroupAsync(RedisKeys.QueueStream(queueName), queueName, "0-0", true).ConfigureAwait(false);
+            await db.StreamCreateConsumerGroupAsync(RedisKeys.QueueStream(queueName), queueName, "0-0").ConfigureAwait(false);
         }
         catch (RedisServerException ex) when (ex.Message.Contains("BUSYGROUP", StringComparison.OrdinalIgnoreCase))
         {

@@ -2,7 +2,7 @@ using MassTransit.Configuration;
 
 namespace RedisTransport.Transport.Configuration;
 
-public class RedisEndpointConfiguration : EndpointConfiguration, IRedisEndpointConfiguration
+internal class RedisEndpointConfiguration : EndpointConfiguration, IRedisEndpointConfiguration
 {
     protected RedisEndpointConfiguration(IRedisTopologyConfiguration topologyConfiguration) : base(topologyConfiguration)
     {

@@ -15,7 +15,7 @@ public static class RedisBusFactoryConfiguratorExtensions
     }
 }
 
-public sealed class RedisRegistrationBusFactory(
+internal sealed class RedisRegistrationBusFactory(
     RedisBusConfiguration busConfiguration,
     Action<IBusRegistrationContext, IRedisBusFactoryConfigurator>? configure)
     : TransportRegistrationBusFactory<IRedisReceiveEndpointConfigurator>(busConfiguration.HostConfiguration)

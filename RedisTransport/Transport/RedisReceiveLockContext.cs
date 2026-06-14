@@ -4,7 +4,7 @@ using StackExchange.Redis;
 
 namespace RedisTransport.Transport;
 
-public sealed class RedisReceiveLockContext(Uri inputAddress, RedisTransportMessage message, IDatabase database, string consumerGroup)
+internal sealed class RedisReceiveLockContext(Uri inputAddress, RedisTransportMessage message, IDatabase database, string consumerGroup)
     : ReceiveLockContext
 {
     private bool _locked = true;
@@ -17,7 +17,7 @@ public sealed class RedisReceiveLockContext(Uri inputAddress, RedisTransportMess
         try
         {
             await database.StreamAcknowledgeAsync(message.StreamKey, consumerGroup, message.EntryId).ConfigureAwait(false);
-            await database.StreamDeleteAsync(message.StreamKey, new RedisValue[] { message.EntryId }).ConfigureAwait(false);
+            await database.StreamDeleteAsync(message.StreamKey, [message.EntryId]).ConfigureAwait(false);
             _locked = false;
         }
         catch (Exception ex)

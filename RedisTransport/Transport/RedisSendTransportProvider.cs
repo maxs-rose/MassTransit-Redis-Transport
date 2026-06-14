@@ -3,7 +3,7 @@ using RedisTransport.Transport.Configuration;
 
 namespace RedisTransport.Transport;
 
-public sealed class RedisSendTransportProvider(IRedisHostConfiguration hostConfiguration, ReceiveEndpointContext context) : ISendTransportProvider
+internal sealed class RedisSendTransportProvider(IRedisHostConfiguration hostConfiguration, ReceiveEndpointContext context) : ISendTransportProvider
 {
     public Uri NormalizeAddress(Uri address)
     {
@@ -18,7 +18,7 @@ public sealed class RedisSendTransportProvider(IRedisHostConfiguration hostConfi
     }
 }
 
-public sealed class RedisPublishTransportProvider(IRedisHostConfiguration hostConfiguration, ReceiveEndpointContext context) : IPublishTransportProvider
+internal sealed class RedisPublishTransportProvider(IRedisHostConfiguration hostConfiguration, ReceiveEndpointContext context) : IPublishTransportProvider
 {
     public Task<ISendTransport> GetPublishTransport<T>(Uri? publishAddress) where T : class
     {

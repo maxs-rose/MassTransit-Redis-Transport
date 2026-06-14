@@ -4,7 +4,7 @@ using RedisTransport.Transport.Configuration;
 
 namespace RedisTransport.Transport;
 
-public sealed class RedisReceiveEndpointBuilder(IRedisReceiveEndpointConfiguration configuration) : ReceiveEndpointBuilder(configuration)
+internal sealed class RedisReceiveEndpointBuilder(IRedisReceiveEndpointConfiguration configuration) : ReceiveEndpointBuilder(configuration)
 {
     private readonly HashSet<Type> _subscribedTypes = new();
 

@@ -5,7 +5,7 @@ using IHost = MassTransit.Transports.IHost;
 
 namespace RedisTransport.Transport.Configuration;
 
-public sealed class RedisHostConfiguration : BaseHostConfiguration<IRedisReceiveEndpointConfiguration, IRedisReceiveEndpointConfigurator>, IRedisHostConfiguration
+internal sealed class RedisHostConfiguration : BaseHostConfiguration<IRedisReceiveEndpointConfiguration, IRedisReceiveEndpointConfigurator>, IRedisHostConfiguration
 {
     private readonly IRedisBusConfiguration _busConfiguration;
 
@@ -34,8 +34,8 @@ public sealed class RedisHostConfiguration : BaseHostConfiguration<IRedisReceive
 
     public IRedisReceiveEndpointConfiguration CreateReceiveEndpointConfiguration(string queueName, Action<IRedisReceiveEndpointConfigurator>? configure = null)
     {
-        var endpointConfiguration = (IRedisEndpointConfiguration)_busConfiguration.CreateEndpointConfiguration();
-        var settings = new RedisReceiveSettings(endpointConfiguration, queueName);
+        var endpointConfiguration = _busConfiguration.CreateEndpointConfiguration();
+        var settings = new RedisReceiveSettings(queueName);
 
         return CreateReceiveEndpointConfiguration(settings, endpointConfiguration, configure);
     }

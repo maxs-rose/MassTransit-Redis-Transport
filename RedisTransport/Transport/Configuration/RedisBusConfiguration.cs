@@ -4,7 +4,7 @@ using MassTransit.Observables;
 
 namespace RedisTransport.Transport.Configuration;
 
-public sealed class RedisBusConfiguration : RedisEndpointConfiguration, IRedisBusConfiguration
+internal sealed class RedisBusConfiguration : RedisEndpointConfiguration, IRedisBusConfiguration
 {
     private readonly BusObservable _busObservers;
 

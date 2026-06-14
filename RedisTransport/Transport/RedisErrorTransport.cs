@@ -7,7 +7,7 @@ using StackExchange.Redis;
 
 namespace RedisTransport.Transport;
 
-public sealed class RedisErrorTransport(string errorQueueName, IRedisHostConfiguration hostConfiguration) : IErrorTransport
+internal sealed class RedisErrorTransport(string errorQueueName, IRedisHostConfiguration hostConfiguration) : IErrorTransport
 {
     public async Task Send(ExceptionReceiveContext context)
     {

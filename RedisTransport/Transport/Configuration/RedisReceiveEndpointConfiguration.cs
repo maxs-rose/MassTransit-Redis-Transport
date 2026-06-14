@@ -1,4 +1,3 @@
-using MassTransit;
 using MassTransit.Configuration;
 using MassTransit.Topology;
 using MassTransit.Transports;
@@ -7,37 +6,26 @@ using IHost = MassTransit.Transports.IHost;
 
 namespace RedisTransport.Transport;
 
-public sealed class RedisReceiveEndpointConfiguration :
+internal sealed class RedisReceiveEndpointConfiguration :
     ReceiveEndpointConfiguration,
     IRedisReceiveEndpointConfiguration,
     IRedisReceiveEndpointConfigurator
 {
-    readonly IRedisHostConfiguration _hostConfiguration;
-    readonly IRedisEndpointConfiguration _endpointConfiguration;
-    readonly RedisReceiveSettings _settings;
-    readonly Lazy<Uri> _inputAddress;
+    private readonly IRedisEndpointConfiguration _endpointConfiguration;
+    private readonly IRedisHostConfiguration _hostConfiguration;
+    private readonly Lazy<Uri> _inputAddress;
 
     public RedisReceiveEndpointConfiguration(IRedisHostConfiguration hostConfiguration, RedisReceiveSettings settings, IRedisEndpointConfiguration endpointConfiguration)
         : base(hostConfiguration, endpointConfiguration)
     {
         _hostConfiguration = hostConfiguration;
-        _settings = settings;
+        Settings = settings;
         _endpointConfiguration = endpointConfiguration;
 
-        _inputAddress = new Lazy<Uri>(() => new RedisEndpointAddress(hostConfiguration.HostAddress, _settings.QueueName));
+        _inputAddress = new Lazy<Uri>(() => new RedisEndpointAddress(hostConfiguration.HostAddress, Settings.QueueName));
     }
 
-    public RedisReceiveSettings Settings => _settings;
-
-    public TimeSpan? AutoDeleteOnIdle
-    {
-        set => _settings.AutoDeleteOnIdle = value;
-    }
-
-    public TimeSpan? MessageTimeToLive
-    {
-        set => _settings.MessageTimeToLive = value;
-    }
+    public RedisReceiveSettings Settings { get; }
 
     public override Uri HostAddress => _hostConfiguration.HostAddress;
     public override Uri InputAddress => _inputAddress.Value;
@@ -53,22 +41,37 @@ public sealed class RedisReceiveEndpointConfiguration :
     {
         var context = CreateRedisReceiveEndpointContext();
 
-        var transport = new RedisReceiveTransport(_hostConfiguration, context, _settings);
+        var transport = new RedisReceiveTransport(_hostConfiguration, context, Settings);
 
         var receiveEndpoint = new ReceiveEndpoint(transport, context);
 
-        host.AddReceiveEndpoint(_settings.QueueName, receiveEndpoint);
+        host.AddReceiveEndpoint(Settings.QueueName, receiveEndpoint);
 
         ReceiveEndpoint = receiveEndpoint;
     }
 
-    QueueRedisReceiveEndpointContext CreateRedisReceiveEndpointContext()
+    public TimeSpan? AutoDeleteOnIdle
+    {
+        set => Settings.AutoDeleteOnIdle = value;
+    }
+
+    public TimeSpan? MessageTimeToLive
+    {
+        set => Settings.MessageTimeToLive = value;
+    }
+
+    public TimeSpan PollingInterval
+    {
+        set => Settings.PollingInterval = value;
+    }
+
+    private QueueRedisReceiveEndpointContext CreateRedisReceiveEndpointContext()
     {
         var builder = new RedisReceiveEndpointBuilder(this);
         ApplySpecifications(builder);
         var context = new QueueRedisReceiveEndpointContext(_hostConfiguration, this, builder.SubscribedMessageTypes);
 
-        var errorQueueName = DefaultErrorQueueNameFormatter.Instance.FormatErrorQueueName(_settings.QueueName);
+        var errorQueueName = DefaultErrorQueueNameFormatter.Instance.FormatErrorQueueName(Settings.QueueName);
         context.GetOrAddPayload<IErrorTransport>(() => new RedisErrorTransport(errorQueueName, _hostConfiguration));
 
         return context;

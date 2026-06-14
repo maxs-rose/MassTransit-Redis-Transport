@@ -2,7 +2,7 @@ using MassTransit.Configuration;
 
 namespace RedisTransport.Transport.Configuration;
 
-public interface IRedisBusConfiguration : IBusConfiguration
+internal interface IRedisBusConfiguration : IBusConfiguration
 {
     new IRedisHostConfiguration HostConfiguration { get; }
     new IRedisEndpointConfiguration BusEndpointConfiguration { get; }

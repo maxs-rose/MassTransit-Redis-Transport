@@ -6,7 +6,7 @@ using StackExchange.Redis;
 
 namespace RedisTransport.Transport;
 
-public sealed class RedisMessageSendContext<T>(T message, CancellationToken cancellationToken) : MessageSendContext<T>(message, cancellationToken)
+internal sealed class RedisMessageSendContext<T>(T message, CancellationToken cancellationToken) : MessageSendContext<T>(message, cancellationToken)
     where T : class
 {
     public Guid TransportMessageId { get; } = NewId.NextGuid();

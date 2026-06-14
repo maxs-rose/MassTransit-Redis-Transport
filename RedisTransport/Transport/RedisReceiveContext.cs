@@ -3,7 +3,7 @@ using MassTransit.Transports;
 
 namespace RedisTransport.Transport;
 
-public sealed class RedisReceiveContext : BaseReceiveContext
+internal sealed class RedisReceiveContext : BaseReceiveContext
 {
     public RedisReceiveContext(RedisTransportMessage message, ReceiveEndpointContext context, RedisReceiveLockContext lockContext)
         : base(message.DeliveryCount > 0, context, lockContext, message)

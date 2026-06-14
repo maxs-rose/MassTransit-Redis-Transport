@@ -4,7 +4,7 @@ using StackExchange.Redis;
 
 namespace RedisTransport.Transport.Configuration;
 
-public interface IRedisHostConfiguration : IHostConfiguration, IReceiveConfigurator<IRedisReceiveEndpointConfigurator>
+internal interface IRedisHostConfiguration : IHostConfiguration, IReceiveConfigurator<IRedisReceiveEndpointConfigurator>
 {
     IConnectionMultiplexer Multiplexer { get; set; }
 

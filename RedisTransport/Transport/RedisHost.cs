@@ -1,17 +1,16 @@
 using MassTransit;
 using MassTransit.Transports;
 using RedisTransport.Transport.Configuration;
-using IHost = MassTransit.Transports.IHost;
 
 namespace RedisTransport.Transport;
 
-public interface IRedisHost : IHost<IRedisReceiveEndpointConfigurator>
+internal interface IRedisHost : IHost<IRedisReceiveEndpointConfigurator>
 {
 }
 
-public sealed class RedisHost : BaseHost, IRedisHost
+internal sealed class RedisHost : BaseHost, IRedisHost
 {
-    readonly IRedisHostConfiguration _hostConfiguration;
+    private readonly IRedisHostConfiguration _hostConfiguration;
 
     public RedisHost(IRedisHostConfiguration hostConfiguration, IBusTopology busTopology) : base(hostConfiguration, busTopology)
     {

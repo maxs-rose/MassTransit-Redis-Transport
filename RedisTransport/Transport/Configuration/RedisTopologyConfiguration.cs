@@ -1,10 +1,11 @@
+using System.Diagnostics.CodeAnalysis;
 using MassTransit;
 using MassTransit.Configuration;
 using MassTransit.Topology;
 
 namespace RedisTransport.Transport.Configuration;
 
-public sealed class RedisTopologyConfiguration : IRedisTopologyConfiguration
+internal sealed class RedisTopologyConfiguration : IRedisTopologyConfiguration
 {
     public RedisTopologyConfiguration(IMessageTopologyConfigurator messageTopology)
     {
@@ -62,14 +63,14 @@ public sealed class RedisPublishTopology : PublishTopology
 
 public sealed class RedisMessagePublishTopology<T> : MessagePublishTopology<T> where T : class
 {
-    readonly string _topicName;
+    private readonly string _topicName;
 
     public RedisMessagePublishTopology(IPublishTopology publishTopology) : base(publishTopology)
     {
-        _topicName = RedisTransport.Transport.MessageTypeNameFormatter.Format(typeof(T));
+        _topicName = MessageTypeNameFormatter.Format(typeof(T));
     }
 
-    public override bool TryGetPublishAddress(Uri baseAddress, [System.Diagnostics.CodeAnalysis.NotNullWhen(true)] out Uri? publishAddress)
+    public override bool TryGetPublishAddress(Uri baseAddress, [NotNullWhen(true)] out Uri? publishAddress)
     {
         publishAddress = new Uri(baseAddress, $"/{_topicName}?type=topic");
         return true;
@@ -78,5 +79,8 @@ public sealed class RedisMessagePublishTopology<T> : MessagePublishTopology<T> w
 
 public sealed class RedisConsumeTopology : ConsumeTopology
 {
-    public RedisConsumeTopology(RedisPublishTopology publish) { _ = publish; }
+    public RedisConsumeTopology(RedisPublishTopology publish)
+    {
+        _ = publish;
+    }
 }

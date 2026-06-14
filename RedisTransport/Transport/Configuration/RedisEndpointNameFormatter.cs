@@ -3,7 +3,7 @@ using MassTransit.Transports;
 
 namespace RedisTransport.Transport.Configuration;
 
-public sealed class RedisEndpointNameFormatter(IMessageNameFormatter messageNameFormatter) : DefaultEndpointNameFormatter(true)
+internal sealed class RedisEndpointNameFormatter(IMessageNameFormatter messageNameFormatter) : DefaultEndpointNameFormatter(true)
 {
     protected override string FormatName(Type type)
     {

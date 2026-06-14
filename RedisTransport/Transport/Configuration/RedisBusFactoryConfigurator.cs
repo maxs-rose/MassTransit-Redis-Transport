@@ -3,7 +3,7 @@ using MassTransit.Configuration;
 
 namespace RedisTransport.Transport.Configuration;
 
-public sealed class RedisBusFactoryConfigurator : BusFactoryConfigurator, IRedisBusFactoryConfigurator, IBusFactory
+internal sealed class RedisBusFactoryConfigurator : BusFactoryConfigurator, IRedisBusFactoryConfigurator, IBusFactory
 {
     private readonly IRedisBusConfiguration _busConfiguration;
     private readonly IRedisHostConfiguration _hostConfiguration;
@@ -15,7 +15,7 @@ public sealed class RedisBusFactoryConfigurator : BusFactoryConfigurator, IRedis
         _hostConfiguration = busConfiguration.HostConfiguration;
 
         var queueName = busConfiguration.Topology.Consume.CreateTemporaryQueueName("bus");
-        _settings = new RedisReceiveSettings(busConfiguration.BusEndpointConfiguration, queueName, Defaults.TemporaryAutoDeleteOnIdle);
+        _settings = new RedisReceiveSettings(queueName, Defaults.TemporaryAutoDeleteOnIdle);
     }
 
     public IReceiveEndpointConfiguration CreateBusEndpointConfiguration(Action<IReceiveEndpointConfigurator> configure)

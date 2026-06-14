@@ -5,7 +5,7 @@ using StackExchange.Redis;
 
 namespace RedisTransport.Transport;
 
-public sealed class RedisSendTransportContext(
+internal sealed class RedisSendTransportContext(
     IRedisHostConfiguration hostConfiguration,
     ReceiveEndpointContext receiveEndpointContext,
     string entityName,
