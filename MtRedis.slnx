@@ -1,0 +1,5 @@
+<Solution>
+  <Project Path="MtRedis/MtRedis.csproj" />
+  <Project Path="RedisTransport/RedisTransport.csproj" />
+  <Project Path="TestTransport/TestTransport.csproj" />
+</Solution>

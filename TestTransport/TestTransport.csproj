@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk.Worker">
+
+    <PropertyGroup>
+        <TargetFramework>net10.0</TargetFramework>
+        <Nullable>enable</Nullable>
+        <ImplicitUsings>enable</ImplicitUsings>
+        <UserSecretsId>dotnet-TestTransport-a39e785e-50fd-4b30-a964-21c012c22c05</UserSecretsId>
+    </PropertyGroup>
+
+    <ItemGroup>
+        <PackageReference Include="Aspire.StackExchange.Redis" Version="13.4.3"/>
+        <PackageReference Include="MassTransit" Version="8.5.10"/>
+        <PackageReference Include="MassTransit.SqlTransport.PostgreSQL" Version="8.5.10"/>
+        <PackageReference Include="Microsoft.Extensions.Hosting" Version="10.0.9"/>
+        <PackageReference Include="StackExchange.Redis" Version="2.13.1"/>
+    </ItemGroup>
+
+    <ItemGroup>
+        <ProjectReference Include="..\RedisTransport\RedisTransport.csproj"/>
+    </ItemGroup>
+</Project>

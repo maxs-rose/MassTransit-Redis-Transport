@@ -1,0 +1,14 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+    <PropertyGroup>
+        <TargetFramework>net10.0</TargetFramework>
+        <Nullable>enable</Nullable>
+        <ImplicitUsings>enable</ImplicitUsings>
+        <UserSecretsId>dotnet-RedisTransport-a33aa794-3f84-4e8d-8aac-3bb6029750ef</UserSecretsId>
+    </PropertyGroup>
+
+    <ItemGroup>
+        <PackageReference Include="MassTransit" Version="8.5.10"/>
+        <PackageReference Include="StackExchange.Redis" Version="2.13.1"/>
+    </ItemGroup>
+</Project>
