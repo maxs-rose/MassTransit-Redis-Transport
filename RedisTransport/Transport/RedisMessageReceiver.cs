@@ -9,6 +9,8 @@ namespace RedisTransport.Transport;
 
 internal sealed class RedisMessageReceiver : ConsumerAgent<string>
 {
+    private static readonly TimeSpan MaxRefreshInterval = TimeSpan.FromMinutes(1);
+
     private readonly RedisClientContext _clientContext;
     private readonly string _consumerGroup;
     private readonly string _consumerName;
@@ -16,6 +18,7 @@ internal sealed class RedisMessageReceiver : ConsumerAgent<string>
     private readonly string _notifyChannel;
     private readonly RedisReceiveSettings _settings;
     private readonly string _streamKey;
+    private readonly IReadOnlyList<string> _subscribedTopics;
     private TaskCompletionSource<bool> _wakeup = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
     public RedisMessageReceiver(
@@ -24,7 +27,8 @@ internal sealed class RedisMessageReceiver : ConsumerAgent<string>
         RedisReceiveSettings settings,
         string streamKey,
         string notifyChannel,
-        string consumerGroup) : base(context)
+        string consumerGroup,
+        IReadOnlyList<string> subscribedTopics) : base(context)
     {
         _clientContext = clientContext;
         _context = context;
@@ -33,8 +37,12 @@ internal sealed class RedisMessageReceiver : ConsumerAgent<string>
         _notifyChannel = notifyChannel;
         _consumerGroup = consumerGroup;
         _consumerName = $"{Environment.MachineName}-{Guid.NewGuid():N}";
+        _subscribedTopics = subscribedTopics;
 
         TrySetConsumeTask(Task.Run(Consume));
+
+        if (settings.AutoDeleteOnIdle.HasValue)
+            _ = Task.Run(RefreshLoop);
     }
 
     private async Task Consume()
@@ -118,6 +126,40 @@ internal sealed class RedisMessageReceiver : ConsumerAgent<string>
                 {
                 }
         }
+    }
+
+    private async Task RefreshLoop()
+    {
+        var ttl = _settings.AutoDeleteOnIdle!.Value;
+        var interval = TimeSpan.FromTicks(ttl.Ticks / 2);
+        if (interval > MaxRefreshInterval) interval = MaxRefreshInterval;
+        if (interval < TimeSpan.FromSeconds(1)) interval = TimeSpan.FromSeconds(1);
+
+        while (!Stopping.IsCancellationRequested)
+            try
+            {
+                await Task.Delay(interval, Stopping).ConfigureAwait(false);
+                await ApplyExpiriesAsync(_clientContext.Database).ConfigureAwait(false);
+                LogContext.Debug?.Log("Refreshed TTL for ephemeral queue {Queue}", _consumerGroup);
+            }
+            catch (OperationCanceledException) { break; }
+            catch (Exception ex)
+            {
+                LogContext.Debug?.Log(ex, "TTL refresh faulted for {Queue}", _consumerGroup);
+            }
+    }
+
+    private async Task ApplyExpiriesAsync(IDatabase db)
+    {
+        var ttl = _settings.AutoDeleteOnIdle!.Value;
+        var fields = new RedisValue[] { _consumerGroup };
+
+        var pending = new List<Task>(_subscribedTopics.Count + 1);
+        foreach (var topic in _subscribedTopics)
+            pending.Add(db.HashFieldExpireAsync(RedisKeys.TopicSubscribers(topic), fields, ttl));
+        pending.Add(db.KeyExpireAsync(_streamKey, ttl, CommandFlags.FireAndForget));
+
+        await Task.WhenAll(pending).ConfigureAwait(false);
     }
 
     private async Task TrimExpiredMessages(IDatabase db)

@@ -8,8 +8,6 @@ namespace RedisTransport.Transport.Middleware;
 internal sealed class RedisConsumerFilter(QueueRedisReceiveEndpointContext context, RedisReceiveSettings settings)
     : IFilter<RedisClientContext>
 {
-    private static readonly TimeSpan MaxRefreshInterval = TimeSpan.FromMinutes(1);
-
     private readonly List<string> _subscribedTopics = context.SubscribedMessageTypes
         .Select(RedisMessageTypeFormatter.Format)
         .ToList();
@@ -23,17 +21,14 @@ internal sealed class RedisConsumerFilter(QueueRedisReceiveEndpointContext conte
 
         await RegisterSubscriptionsAsync(clientContext.Database).ConfigureAwait(false);
 
-        using var refreshCts = CancellationTokenSource.CreateLinkedTokenSource(clientContext.CancellationToken);
-        if (settings.AutoDeleteOnIdle.HasValue)
-            _ = RefreshLoop(clientContext.Database, refreshCts.Token);
-
         var receiver = new RedisMessageReceiver(
             clientContext,
             context,
             settings,
             RedisKeys.QueueStream(settings.QueueName),
             RedisKeys.QueueNotify(settings.QueueName),
-            settings.QueueName);
+            settings.QueueName,
+            _subscribedTopics);
 
         await receiver.Ready.ConfigureAwait(false);
 
@@ -46,8 +41,6 @@ internal sealed class RedisConsumerFilter(QueueRedisReceiveEndpointContext conte
         }
         finally
         {
-            await refreshCts.CancelAsync().ConfigureAwait(false);
-
             DeliveryMetrics metrics = receiver;
             await context.TransportObservers.NotifyCompleted(context.InputAddress, metrics).ConfigureAwait(false);
             context.LogConsumerCompleted(metrics.DeliveryCount, metrics.ConcurrentDeliveryCount);
@@ -76,7 +69,7 @@ internal sealed class RedisConsumerFilter(QueueRedisReceiveEndpointContext conte
             }
 
             if (settings.AutoDeleteOnIdle.HasValue)
-                await ApplyExpiriesAsync(db).ConfigureAwait(false);
+                await ApplyInitialExpiriesAsync(db).ConfigureAwait(false);
         }
         catch (Exception ex)
         {
@@ -96,7 +89,7 @@ internal sealed class RedisConsumerFilter(QueueRedisReceiveEndpointContext conte
         }
     }
 
-    private async Task ApplyExpiriesAsync(IDatabase db)
+    private async Task ApplyInitialExpiriesAsync(IDatabase db)
     {
         var ttl = settings.AutoDeleteOnIdle!.Value;
         var queueName = settings.QueueName;
@@ -108,27 +101,6 @@ internal sealed class RedisConsumerFilter(QueueRedisReceiveEndpointContext conte
         pending.Add(db.KeyExpireAsync(RedisKeys.QueueStream(queueName), ttl, CommandFlags.FireAndForget));
 
         await Task.WhenAll(pending).ConfigureAwait(false);
-    }
-
-    private async Task RefreshLoop(IDatabase db, CancellationToken ct)
-    {
-        var ttl = settings.AutoDeleteOnIdle!.Value;
-        var interval = TimeSpan.FromTicks(ttl.Ticks / 2);
-        if (interval > MaxRefreshInterval) interval = MaxRefreshInterval;
-        if (interval < TimeSpan.FromSeconds(1)) interval = TimeSpan.FromSeconds(1);
-
-        while (!ct.IsCancellationRequested)
-            try
-            {
-                await Task.Delay(interval, ct).ConfigureAwait(false);
-                await ApplyExpiriesAsync(db).ConfigureAwait(false);
-                LogContext.Debug?.Log("Refreshed TTL for ephemeral queue {Queue}", settings.QueueName);
-            }
-            catch (OperationCanceledException) { break; }
-            catch (Exception ex)
-            {
-                LogContext.Debug?.Log(ex, "TTL refresh faulted for {Queue}", settings.QueueName);
-            }
     }
 
     private async Task CleanupAsync(IDatabase db)
