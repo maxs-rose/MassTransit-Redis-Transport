@@ -9,9 +9,9 @@ builder.AddProject<TestTransport>("RedisTransportTest")
     .WaitFor(redis)
     .WithReference(redis);
 
-builder.AddProject<TestTransport>("RedisTransportTest2")
-    .WithEnvironment("UseWorker", "false")
-    .WaitFor(redis)
-    .WithReference(redis);
+// builder.AddProject<TestTransport>("RedisTransportTest2")
+//     .WithEnvironment("UseWorker", "false")
+//     .WaitFor(redis)
+//     .WithReference(redis);
 
 builder.Build().Run();

@@ -1,8 +1,7 @@
-using System.Diagnostics;
 using MassTransit;
+using MassTransit.Logging;
 using MassTransit.Transports;
 using RedisTransport.Configuration;
-using RedisTransport.Telemetry;
 using StackExchange.Redis;
 
 namespace RedisTransport.Transport;
@@ -27,14 +26,8 @@ internal sealed class RedisSendTransportContext(
     public async Task Send<T>(T message, IPipe<SendContext<T>> pipe, CancellationToken cancellationToken) where T : class
     {
         var sendContext = (RedisMessageSendContext<T>)await CreateSendContext(message, pipe, cancellationToken).ConfigureAwait(false);
-
-        var destinationKind = addressType == RedisEndpointAddress.AddressType.Topic ? "topic" : "queue";
-
-        using var activity = Otel.ActivitySource.StartActivity(ActivityKind.Producer);
-        activity?.SetTag("messaging.system", "redis");
-        activity?.SetTag("messaging.destination", EntityName);
-        activity?.SetTag("messaging.destination_kind", destinationKind);
-        activity?.SetTag("messaging.message_id", sendContext.MessageId?.ToString());
+        var activity = LogContext.StartSendActivity(this, sendContext);
+        var instrument = LogContext.StartSendInstrument(this, sendContext);
 
         try
         {
@@ -50,6 +43,7 @@ internal sealed class RedisSendTransportContext(
             else
                 await SendToQueue(db, subscriber, EntityName, entries).ConfigureAwait(false);
 
+            activity?.Update(sendContext);
             sendContext.LogSent();
 
             if (SendObservers.Count > 0)
@@ -57,13 +51,19 @@ internal sealed class RedisSendTransportContext(
         }
         catch (Exception ex)
         {
-            activity?.SetStatus(ActivityStatusCode.Error, ex.Message);
+            activity?.AddExceptionEvent(ex);
+            instrument?.AddException(ex);
             sendContext.LogFaulted(ex);
 
             if (SendObservers.Count > 0)
                 await SendObservers.SendFault(sendContext, ex).ConfigureAwait(false);
 
             throw;
+        }
+        finally
+        {
+            activity?.Stop();
+            instrument?.Stop();
         }
     }
 

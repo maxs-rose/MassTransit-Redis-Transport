@@ -52,10 +52,20 @@ internal sealed class RedisTransportMessage
         var elements = JsonSerializer.Deserialize<IEnumerable<KeyValuePair<string, object>>>(json, SystemTextJsonMessageSerializer.Options);
         if (elements != null)
             foreach (var element in elements)
-                headers.Set(element.Key, element.Value);
+                headers.Set(element.Key, element.Value is JsonElement je ? UnboxJsonElement(je) : element.Value);
 
         return headers;
     }
+
+    private static object? UnboxJsonElement(JsonElement element) => element.ValueKind switch
+    {
+        JsonValueKind.String => element.GetString(),
+        JsonValueKind.Number => element.TryGetInt64(out var l) ? l : (object)element.GetDouble(),
+        JsonValueKind.True => true,
+        JsonValueKind.False => false,
+        JsonValueKind.Null => null,
+        _ => element.GetRawText(),
+    };
 
     internal static RedisTransportMessage FromStreamEntry(string key, StreamEntry entry)
     {

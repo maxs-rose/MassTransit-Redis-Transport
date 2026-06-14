@@ -1,9 +1,7 @@
-using System.Diagnostics;
 using MassTransit;
 using MassTransit.Transports;
 using MassTransit.Util;
 using RedisTransport.Configuration;
-using RedisTransport.Telemetry;
 using StackExchange.Redis;
 
 namespace RedisTransport.Transport;
@@ -96,10 +94,6 @@ internal sealed class RedisMessageReceiver : ConsumerAgent<string>
 
     private async Task<IEnumerable<StreamEntry>> ReceiveMessages(IDatabase db, int limit, CancellationToken ct)
     {
-        using var t = Otel.TraceActivitySource.StartActivity(ActivityKind.Consumer);
-        t?.SetTag("messaging.system", "redis");
-        t?.SetTag("messaging.destination", _streamKey);
-
         await TrimExpiredMessages(db).ConfigureAwait(false);
 
         var entries = await db.StreamReadGroupAsync(
@@ -112,7 +106,6 @@ internal sealed class RedisMessageReceiver : ConsumerAgent<string>
             return [];
         }
 
-        t?.SetTag("messaging.batch.message_count", entries.Length);
         LogContext.Debug?.Log("Read {Count} message(s) from {Stream}", entries.Length, _streamKey);
 
         return entries;
@@ -133,13 +126,6 @@ internal sealed class RedisMessageReceiver : ConsumerAgent<string>
             return;
         }
 
-        using var activity = Otel.ActivitySource.StartActivity(ActivityKind.Consumer);
-        activity?.SetTag("messaging.system", "redis");
-        activity?.SetTag("messaging.destination", _streamKey);
-        activity?.SetTag("messaging.message_id", message.MessageId?.ToString());
-        activity?.SetTag("messaging.message_type", message.MessageType);
-        activity?.SetTag("messaging.redis.entry_id", entry.Id.ToString());
-
         LogContext.Debug?.Log("Dispatching message {MessageId} ({MessageType}) from {Stream}",
             message.MessageId, message.MessageType, _streamKey);
 
@@ -151,7 +137,6 @@ internal sealed class RedisMessageReceiver : ConsumerAgent<string>
         }
         catch (Exception ex)
         {
-            activity?.SetStatus(ActivityStatusCode.Error, ex.Message);
             receiveContext.LogTransportFaulted(ex);
         }
         finally
