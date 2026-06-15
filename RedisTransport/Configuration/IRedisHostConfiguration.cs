@@ -7,6 +7,7 @@ namespace RedisTransport.Configuration;
 internal interface IRedisHostConfiguration : IHostConfiguration, IReceiveConfigurator<IRedisReceiveEndpointConfigurator>
 {
     IConnectionMultiplexer Multiplexer { get; set; }
+    internal void SetHostAddress(Uri address);
 
     IRedisReceiveEndpointConfiguration CreateReceiveEndpointConfiguration(
         RedisReceiveSettings settings,

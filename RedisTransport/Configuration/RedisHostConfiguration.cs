@@ -6,10 +6,11 @@ using IHost = MassTransit.Transports.IHost;
 
 namespace RedisTransport.Configuration;
 
-internal sealed class RedisHostConfiguration
-    : BaseHostConfiguration<IRedisReceiveEndpointConfiguration, IRedisReceiveEndpointConfigurator>, IRedisHostConfiguration
+internal sealed class RedisHostConfiguration : BaseHostConfiguration<IRedisReceiveEndpointConfiguration, IRedisReceiveEndpointConfigurator>, IRedisHostConfiguration
 {
     private readonly IRedisBusConfiguration _busConfiguration;
+
+    private Uri _hostAddress = new("redis://localhost/");
 
     public RedisHostConfiguration(IRedisBusConfiguration busConfiguration, IRedisTopologyConfiguration topologyConfiguration)
         : base(busConfiguration)
@@ -24,13 +25,16 @@ internal sealed class RedisHostConfiguration
             x.Handle<RedisTimeoutException>();
             x.Exponential(1000, TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(30), TimeSpan.FromSeconds(3));
         });
-
-        HostAddress = new Uri("redis://localhost/");
     }
 
     public IConnectionMultiplexer Multiplexer { get; set; } = null!;
+    public override Uri HostAddress => _hostAddress;
 
-    public override Uri HostAddress { get; }
+    public void SetHostAddress(Uri address)
+    {
+        _hostAddress = address;
+    }
+
     public override IBusTopology Topology { get; }
     public override IRetryPolicy ReceiveTransportRetryPolicy { get; }
 
@@ -100,7 +104,6 @@ internal sealed class RedisHostConfiguration
 
 internal sealed class RedisBusTopology(IRedisHostConfiguration host, IRedisTopologyConfiguration topology) : IBusTopology
 {
-    public IConsumeTopology ConsumeTopology => topology.Consume;
     public ISendTopology SendTopology => topology.Send;
     public IPublishTopology PublishTopology => topology.Publish;
 
