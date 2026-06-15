@@ -40,7 +40,7 @@ internal sealed class RedisMessageReceiver : ConsumerAgent<string>
 
         TrySetConsumeTask(Task.Run(Consume));
 
-        if (settings.AutoDeleteOnIdle.HasValue)
+        if (settings.AutoDeleteOnIdle.HasValue || subscribedTopics.Count > 0)
             _ = Task.Run(RefreshLoop);
     }
 
@@ -76,7 +76,21 @@ internal sealed class RedisMessageReceiver : ConsumerAgent<string>
             });
 
             while (!IsStopping)
-                await algorithm.Run((limit, ct) => ReceiveMessages(db, limit, ct), (entry, _) => HandleMessage(db, entry), Stopping).ConfigureAwait(false);
+                await algorithm.Run(async (limit, ct) =>
+                    {
+                        try
+                        {
+                            return await ReceiveMessages(db, limit, ct);
+                        }
+                        // Someone has deleted the queue manually in redis so just recreate it
+                        catch (RedisServerException ex) when (ex.Message.Contains("NOGROUP", StringComparison.OrdinalIgnoreCase))
+                        {
+                            await EnsureConsumerGroup().ConfigureAwait(false);
+                            return [];
+                        }
+                    },
+                    (entry, _) => HandleMessage(db, entry),
+                    Stopping).ConfigureAwait(false);
         }
         catch (OperationCanceledException) when (IsStopping)
         {
@@ -164,17 +178,15 @@ internal sealed class RedisMessageReceiver : ConsumerAgent<string>
 
     private async Task RefreshLoop()
     {
-        var ttl = _settings.AutoDeleteOnIdle!.Value;
-        var interval = TimeSpan.FromTicks(ttl.Ticks / 2);
-        if (interval > MaxRefreshInterval) interval = MaxRefreshInterval;
-        if (interval < TimeSpan.FromSeconds(1)) interval = TimeSpan.FromSeconds(1);
+        var interval = GetRefreshInterval();
 
         while (!Stopping.IsCancellationRequested)
             try
             {
                 await Task.Delay(interval, Stopping).ConfigureAwait(false);
+                await EnsureTopics(_clientContext.Database).ConfigureAwait(false);
                 await ApplyExpiriesAsync(_clientContext.Database).ConfigureAwait(false);
-                LogContext.Debug?.Log("Refreshed TTL for ephemeral queue {Queue}", _consumerGroup);
+                LogContext.Debug?.Log("Refreshed subscriptions/TTL for queue {Queue}", _consumerGroup);
             }
             catch (OperationCanceledException)
             {
@@ -182,13 +194,30 @@ internal sealed class RedisMessageReceiver : ConsumerAgent<string>
             }
             catch (Exception ex)
             {
-                LogContext.Debug?.Log(ex, "TTL refresh faulted for {Queue}", _consumerGroup);
+                LogContext.Debug?.Log(ex, "Subscription refresh faulted for {Queue}", _consumerGroup);
             }
+    }
+
+    private TimeSpan GetRefreshInterval()
+    {
+        if (!_settings.AutoDeleteOnIdle.HasValue)
+            return MaxRefreshInterval;
+
+        var ttl = _settings.AutoDeleteOnIdle.Value;
+        var interval = TimeSpan.FromTicks(ttl.Ticks / 2);
+
+        if (interval > MaxRefreshInterval) interval = MaxRefreshInterval;
+        if (interval < TimeSpan.FromSeconds(1)) interval = TimeSpan.FromSeconds(1);
+
+        return interval;
     }
 
     private async Task ApplyExpiriesAsync(IDatabase db)
     {
-        var ttl = _settings.AutoDeleteOnIdle!.Value;
+        if (!_settings.AutoDeleteOnIdle.HasValue)
+            return;
+
+        var ttl = _settings.AutoDeleteOnIdle.Value;
         var fields = new RedisValue[] { _consumerGroup };
 
         var pending = new List<Task>(_subscribedTopics.Count + 1);
@@ -197,6 +226,16 @@ internal sealed class RedisMessageReceiver : ConsumerAgent<string>
         pending.Add(db.KeyExpireAsync(_streamKey, ttl, CommandFlags.FireAndForget));
 
         await Task.WhenAll(pending).ConfigureAwait(false);
+    }
+
+    private async Task EnsureTopics(IDatabase db)
+    {
+        foreach (var topic in _subscribedTopics)
+            if (!await db.HashExistsAsync(RedisKeys.TopicSubscribers(topic), _consumerGroup).ConfigureAwait(false))
+            {
+                LogContext.Warning?.Log("Subscription for {Topic} on queue {Queue} was deleted; re-registering", topic, _consumerGroup);
+                await db.HashSetAsync(RedisKeys.TopicSubscribers(topic), _consumerGroup, "1").ConfigureAwait(false);
+            }
     }
 
     private async Task TrimExpiredMessages(IDatabase db)

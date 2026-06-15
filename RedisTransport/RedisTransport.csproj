@@ -9,7 +9,6 @@
 
     <ItemGroup>
         <PackageReference Include="MassTransit" Version="8.5.10"/>
-        <PackageReference Include="OpenTelemetry" Version="1.16.0"/>
-        <PackageReference Include="StackExchange.Redis" Version="2.13.1"/>
+        <PackageReference Include="StackExchange.Redis" Version="3.0.0"/>
     </ItemGroup>
 </Project>
