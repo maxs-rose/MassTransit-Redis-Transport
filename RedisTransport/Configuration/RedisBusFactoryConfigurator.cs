@@ -1,5 +1,6 @@
 using MassTransit;
 using MassTransit.Configuration;
+using RedisTransport.Transport;
 using StackExchange.Redis;
 
 namespace RedisTransport.Configuration;
@@ -82,6 +83,11 @@ internal sealed class RedisBusFactoryConfigurator : BusFactoryConfigurator, IRed
     public void ReceiveEndpoint(string queueName, Action<IRedisReceiveEndpointConfigurator> configureEndpoint)
     {
         _hostConfiguration.ReceiveEndpoint(queueName, configureEndpoint);
+    }
+
+    public void WithPrefix(string prefix)
+    {
+        RedisKeys.KeyPrefix = prefix;
     }
 
     internal Task<IConnectionMultiplexer> CreateMultiplexer()

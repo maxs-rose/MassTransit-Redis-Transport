@@ -2,18 +2,25 @@ namespace RedisTransport.Transport;
 
 internal static class RedisKeys
 {
+    internal static string KeyPrefix { get; set; } = string.Empty;
+
     public static string QueueStream(string queueName)
     {
-        return $"mt:q:{queueName}";
+        return WithPrefix($"mt:q:{queueName}");
     }
 
     public static string QueueNotify(string queueName)
     {
-        return $"mt:q:{queueName}:notify";
+        return WithPrefix($"mt:q:{queueName}:notify");
     }
 
     public static string TopicSubscribers(string topicName)
     {
-        return $"mt:subs:{topicName}";
+        return WithPrefix($"mt:subs:{topicName}");
+    }
+
+    private static string WithPrefix(string key)
+    {
+        return $"{KeyPrefix}{key}";
     }
 }
